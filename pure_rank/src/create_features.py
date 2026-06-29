@@ -231,8 +231,46 @@ def _build_hist_features(df: pd.DataFrame) -> pd.DataFrame:
         lambda x: x.shift(1).rolling(3, min_periods=1).mean()
     )
 
+    # ─── 天候適性系 ───────────────────────────────────────────────────────────────
+    df["hist_same_weather_win_rate"] = (
+        df.groupby(["ketto_num", "weather_code"])["is_win"].transform(
+            lambda x: x.shift(1).expanding().mean()
+        )
+    )
+    df["hist_same_weather_avg_rank"] = (
+        df.groupby(["ketto_num", "weather_code"])["finish_rank"].transform(
+            lambda x: x.shift(1).expanding().mean()
+        )
+    )
+
+    # ─── コース×距離帯複合適性 ────────────────────────────────────────────────────
+    df["hist_same_course_dist_win_rate"] = (
+        df.groupby(["ketto_num", "course_code", "distance_category"])["is_win"].transform(
+            lambda x: x.shift(1).expanding().mean()
+        )
+    )
+
+    # ─── グレード適性系 ───────────────────────────────────────────────────────────
+    df["hist_same_grade_win_rate"] = (
+        df.groupby(["ketto_num", "grade_code"])["is_win"].transform(
+            lambda x: x.shift(1).expanding().mean()
+        )
+    )
+    df["_is_top_grade"] = df["grade_code"].isin([1, 2, 3]).astype(np.int8)
+    df["hist_top_grade_exp_count"] = df.groupby("ketto_num")["_is_top_grade"].transform(
+        lambda x: x.shift(1).expanding().sum()
+    )
+
+    # ─── 精細距離適性（100m単位） ──────────────────────────────────────────────────
+    df["_dist_bin_100"] = (df["distance"] // 100) * 100
+    df["hist_exact_dist_win_rate"] = (
+        df.groupby(["ketto_num", "_dist_bin_100"])["is_win"].transform(
+            lambda x: x.shift(1).expanding().mean()
+        )
+    )
+
     # 一時列を削除
-    df = df.drop(columns=["_time_dev"])
+    df = df.drop(columns=["_time_dev", "_is_top_grade", "_dist_bin_100"])
     return df
 
 
@@ -253,6 +291,20 @@ def _build_current_features(df: pd.DataFrame) -> pd.DataFrame:
     # 芝は内枠有利、ダートは大きな差なし（方向性を数値化）
     surface_sign = df["surface_code"].map({1: 1, 2: -1}).fillna(0).astype(float)
     df["wakuban_surface"] = df["wakuban"].astype(float) * surface_sign
+
+    # ─── フィールド強度（SECTION 3完了後に依存） ─────────────────────────────────
+    # 新馬(hist_win_rate=NaN)は 0 として field 平均を計算
+    win_rate_filled = df["hist_win_rate"].fillna(0)
+    df["field_avg_win_rate"] = df.groupby("race_id")[win_rate_filled.name].transform(
+        lambda x: win_rate_filled.loc[x.index].mean()
+    )
+    # groupby+transform では Series を直接参照できないため fillna後の列を使う
+    df["_hist_win_rate_filled"] = df["hist_win_rate"].fillna(0)
+    df["field_avg_win_rate"] = df.groupby("race_id")["_hist_win_rate_filled"].transform("mean")
+    df["field_avg_prize"] = df.groupby("race_id")["hist_avg_prize_3"].transform("mean")
+    df["win_rate_vs_field"] = df["hist_win_rate"] - df["field_avg_win_rate"]
+    df["prize_vs_field"] = df["hist_avg_prize_3"] - df["field_avg_prize"]
+    df = df.drop(columns=["_hist_win_rate_filled"])
 
     return df
 

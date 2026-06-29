@@ -25,7 +25,7 @@
     "preprocessed_dir": "pure_rank/data/01_preprocessed",
     "features_dir": "pure_rank/data/02_features",
     "models_dir": "pure_rank/models",
-    "features_version": "v2",
+    "features_version": "v3",
     "hc_dir": "C:/Users/syugo/AI/RaceAI_var1.0/common/data/output/slop_hc",
     "wc_dir": "C:/Users/syugo/AI/RaceAI_var1.0/common/data/output/wood_wc"
   },
@@ -37,7 +37,8 @@
       "course_code",
       "grade_code",
       "distance_category",
-      "sex_code"
+      "sex_code",
+      "weather_code"
     ],
     "target": "finish_rank",
     "lr_label": "lr_label",
