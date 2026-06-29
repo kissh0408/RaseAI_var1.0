@@ -14,6 +14,9 @@ pure_rank/data/01_preprocessed/*.parquet
 pure_rank/data/02_features/*.parquet
 pure_rank/data/02_features/*.csv
 *.db
+*.sqlite3
+*.bak
+common/data/output/
 
 # Models (large binary)
 pure_rank/models/*.txt
