@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Data files (large)
+pure_rank/data/01_preprocessed/*.parquet
+pure_rank/data/02_features/*.parquet
+pure_rank/data/02_features/*.csv
+*.db
+
+# Models (large binary)
+pure_rank/models/*.txt
+pure_rank/models/*.joblib
+
+# Backup files
+*_backup*.parquet
+*_backup*.txt
+
+# Environment
+.env
+*.env
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Temporary work files
+pure_rank/work/
+main/work/
