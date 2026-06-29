@@ -1,0 +1,17 @@
+{
+  "metrics": {
+    "top1_rate": 0.254869109947644,
+    "top3_rate": 0.5535078534031413,
+    "ndcg_at_3": 0.48069956092890775,
+    "spearman": 0.44430093289187167,
+    "n_races": 4775.0,
+    "n_samples": 66020.0
+  },
+  "baseline": {
+    "top1_rate": 0.285,
+    "top3_rate": null,
+    "ndcg_at_3": 0.497,
+    "spearman": 0.489
+  },
+  "model_count": 15
+}
