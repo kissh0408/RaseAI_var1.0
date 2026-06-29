@@ -25,7 +25,9 @@
     "preprocessed_dir": "pure_rank/data/01_preprocessed",
     "features_dir": "pure_rank/data/02_features",
     "models_dir": "pure_rank/models",
-    "features_version": "v1"
+    "features_version": "v2",
+    "hc_dir": "C:/Users/syugo/AI/RaceAI_var1.0/common/data/output/slop_hc",
+    "wc_dir": "C:/Users/syugo/AI/RaceAI_var1.0/common/data/output/wood_wc"
   },
   "features": {
     "categorical": [

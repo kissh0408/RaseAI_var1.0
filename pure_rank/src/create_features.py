@@ -320,7 +320,187 @@ def _build_sire_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 6: ラベル生成
+# SECTION 6: TRAINING FEATURES (HC/WC)
+# 調教データは race_date より前のセッションのみを参照する（リーク防止）。
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _load_hc(cfg: dict) -> pd.DataFrame:
+    """HC_preprocessed.parquet を読み込む。"""
+    p = PROJECT_ROOT / cfg["data"]["preprocessed_dir"] / "HC_preprocessed.parquet"
+    if not p.exists():
+        raise FileNotFoundError(
+            f"HC_preprocessed.parquet が見つかりません: {p}\npreprocess.py を先に実行してください。"
+        )
+    df = pd.read_parquet(p)
+    print(f"  HC: {len(df):,} rows")
+    return df
+
+
+def _load_wc(cfg: dict) -> pd.DataFrame:
+    """WC_preprocessed.parquet を読み込む。なければ空 DataFrame を返す。"""
+    p = PROJECT_ROOT / cfg["data"]["preprocessed_dir"] / "WC_preprocessed.parquet"
+    if not p.exists():
+        print("  WC: ファイルなし（スキップ）")
+        return pd.DataFrame(
+            columns=["ketto_num", "training_date", "wc_3f_sec", "wc_4f_sec", "wc_1f_sec"]
+        )
+    df = pd.read_parquet(p)
+    print(f"  WC: {len(df):,} rows")
+    return df
+
+
+def _add_training_features(
+    df: pd.DataFrame,
+    hc: pd.DataFrame,
+    wc: pd.DataFrame,
+) -> pd.DataFrame:
+    """調教特徴量を df に追加して返す。
+
+    カテゴリA: 絶対値系（最近接・最速・セッション数）
+    カテゴリB: 同レース内相対比較（rank / zscore）
+    カテゴリC: 過去走との差分（shift(1)）
+    """
+    # ketto_num を int64 に統一（SE parquet では object の場合がある）
+    # merge_asof の by キーおよび後続の merge キーで dtype 一致が必要
+    df["ketto_num"] = pd.to_numeric(df["ketto_num"], errors="coerce").astype(np.int64)
+    keys = df[["race_id", "ketto_num", "race_date"]].copy()
+    active_horses = set(keys["ketto_num"].unique())
+
+    # ─── カテゴリA: HC 系 ──────────────────────────────────────────────────────
+    if len(hc) > 0:
+        hc_f = hc[hc["ketto_num"].isin(active_horses)].copy()
+        # merge_asof は right_on キー（training_date）がグローバルソートされている必要がある
+        hc_f = hc_f.sort_values("training_date").reset_index(drop=True)
+        keys_sorted = keys.sort_values("race_date").reset_index(drop=True)
+
+        # 最近接セッション (merge_asof: training_date < race_date かつ 14日以内)
+        last_hc = pd.merge_asof(
+            keys_sorted,
+            hc_f[["ketto_num", "training_date", "hc_3f_sec", "hc_4f_sec", "hc_200_sec"]],
+            left_on="race_date",
+            right_on="training_date",
+            by="ketto_num",
+            direction="backward",
+            tolerance=pd.Timedelta(days=14),
+        ).rename(columns={
+            "hc_3f_sec": "trn_hc_last_3f_sec",
+            "hc_4f_sec": "trn_hc_last_4f_sec",
+            "hc_200_sec": "trn_hc_last_200_sec",
+        }).drop(columns=["training_date"])
+
+        # 14日ウィンドウ集計（最速タイム・セッション数）
+        merged_hc = keys.merge(
+            hc_f[["ketto_num", "training_date", "hc_3f_sec", "hc_200_sec"]],
+            on="ketto_num", how="left"
+        )
+        diff_days = (merged_hc["race_date"] - merged_hc["training_date"]).dt.days
+        win_hc = merged_hc[(diff_days > 0) & (diff_days <= 14)].copy()
+        hc_agg = win_hc.groupby(["race_id", "ketto_num"]).agg(
+            trn_hc_best_3f_14d=("hc_3f_sec", "min"),
+            trn_hc_best_200_14d=("hc_200_sec", "min"),
+            trn_hc_count_14d=("training_date", "count"),
+        ).reset_index()
+
+        df = df.merge(
+            last_hc[["race_id", "ketto_num", "trn_hc_last_3f_sec", "trn_hc_last_4f_sec", "trn_hc_last_200_sec"]],
+            on=["race_id", "ketto_num"], how="left"
+        )
+        df = df.merge(hc_agg, on=["race_id", "ketto_num"], how="left")
+    else:
+        for col in ["trn_hc_last_3f_sec", "trn_hc_last_4f_sec", "trn_hc_last_200_sec",
+                    "trn_hc_best_3f_14d", "trn_hc_best_200_14d", "trn_hc_count_14d"]:
+            df[col] = np.nan
+
+    # ─── カテゴリA: WC 系 ──────────────────────────────────────────────────────
+    if len(wc) > 0:
+        wc_f = wc[wc["ketto_num"].isin(active_horses)].copy()
+        # merge_asof は right_on キー（training_date）がグローバルソートされている必要がある
+        wc_f = wc_f.sort_values("training_date").reset_index(drop=True)
+        keys_sorted = keys.sort_values("race_date").reset_index(drop=True)
+
+        last_wc = pd.merge_asof(
+            keys_sorted,
+            wc_f[["ketto_num", "training_date", "wc_3f_sec", "wc_4f_sec", "wc_1f_sec"]],
+            left_on="race_date",
+            right_on="training_date",
+            by="ketto_num",
+            direction="backward",
+            tolerance=pd.Timedelta(days=14),
+        ).rename(columns={
+            "wc_3f_sec": "trn_wc_last_3f_sec",
+            "wc_4f_sec": "trn_wc_last_4f_sec",
+            "wc_1f_sec": "trn_wc_last_1f_sec",
+        }).drop(columns=["training_date"])
+
+        merged_wc = keys.merge(
+            wc_f[["ketto_num", "training_date", "wc_3f_sec", "wc_1f_sec"]],
+            on="ketto_num", how="left"
+        )
+        diff_days = (merged_wc["race_date"] - merged_wc["training_date"]).dt.days
+        win_wc = merged_wc[(diff_days > 0) & (diff_days <= 14)].copy()
+        wc_agg = win_wc.groupby(["race_id", "ketto_num"]).agg(
+            trn_wc_best_3f_14d=("wc_3f_sec", "min"),
+            trn_wc_best_1f_14d=("wc_1f_sec", "min"),
+            trn_wc_count_14d=("training_date", "count"),
+        ).reset_index()
+
+        df = df.merge(
+            last_wc[["race_id", "ketto_num", "trn_wc_last_3f_sec", "trn_wc_last_4f_sec", "trn_wc_last_1f_sec"]],
+            on=["race_id", "ketto_num"], how="left"
+        )
+        df = df.merge(wc_agg, on=["race_id", "ketto_num"], how="left")
+    else:
+        for col in ["trn_wc_last_3f_sec", "trn_wc_last_4f_sec", "trn_wc_last_1f_sec",
+                    "trn_wc_best_3f_14d", "trn_wc_best_1f_14d", "trn_wc_count_14d"]:
+            df[col] = np.nan
+
+    # 合計セッション数（HC + WC）
+    hc_cnt = df["trn_hc_count_14d"] if "trn_hc_count_14d" in df.columns else pd.Series(np.nan, index=df.index)
+    wc_cnt = df["trn_wc_count_14d"] if "trn_wc_count_14d" in df.columns else pd.Series(np.nan, index=df.index)
+    df["trn_total_count_14d"] = hc_cnt.fillna(0) + wc_cnt.fillna(0)
+    # 両方NaNの場合はNaNに戻す
+    both_nan = df["trn_hc_count_14d"].isna() & df["trn_wc_count_14d"].isna()
+    df.loc[both_nan, "trn_total_count_14d"] = np.nan
+
+    # ─── カテゴリB: 同レース内相対比較 ───────────────────────────────────────────
+
+    def zscore_within_race(s: pd.Series) -> pd.Series:
+        # 全馬NaNの場合はNaNを返す（0.0への暗黙補完を防ぐ）
+        if s.isna().all():
+            return pd.Series(np.nan, index=s.index)
+        mean = s.mean()
+        std = s.std()
+        if pd.isna(std) or std == 0:
+            return pd.Series(0.0, index=s.index)
+        return (s - mean) / std
+
+    df["trn_hc_rank_3f"] = df.groupby("race_id")["trn_hc_best_3f_14d"].rank(
+        method="min", ascending=True, na_option="bottom"
+    )
+    df["trn_hc_rank_200"] = df.groupby("race_id")["trn_hc_best_200_14d"].rank(
+        method="min", ascending=True, na_option="bottom"
+    )
+    df["trn_hc_zscore_3f"] = df.groupby("race_id")["trn_hc_best_3f_14d"].transform(zscore_within_race)
+
+    df["trn_wc_rank_3f"] = df.groupby("race_id")["trn_wc_best_3f_14d"].rank(
+        method="min", ascending=True, na_option="bottom"
+    )
+    df["trn_wc_zscore_3f"] = df.groupby("race_id")["trn_wc_best_3f_14d"].transform(zscore_within_race)
+
+    # ─── カテゴリC: 過去走との差分 (shift(1)) ─────────────────────────────────
+    df = df.sort_values(["ketto_num", "race_date"]).reset_index(drop=True)
+    grp = df.groupby("ketto_num")
+
+    df["trn_hc_3f_delta"]  = df["trn_hc_best_3f_14d"]  - grp["trn_hc_best_3f_14d"].shift(1)
+    df["trn_hc_200_delta"] = df["trn_hc_best_200_14d"] - grp["trn_hc_best_200_14d"].shift(1)
+    df["trn_wc_3f_delta"]  = df["trn_wc_best_3f_14d"]  - grp["trn_wc_best_3f_14d"].shift(1)
+    df["trn_count_delta"]  = df["trn_total_count_14d"]  - grp["trn_total_count_14d"].shift(1)
+
+    return df
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SECTION 7: ラベル生成
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _build_labels(df: pd.DataFrame) -> pd.DataFrame:
@@ -347,7 +527,7 @@ def _build_labels(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 7: NaN 率レポート
+# SECTION 8: NaN 率レポート
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _report_nan_rates(df: pd.DataFrame, threshold: float = 0.3) -> None:
@@ -364,7 +544,7 @@ def _report_nan_rates(df: pd.DataFrame, threshold: float = 0.3) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 8: マニフェスト保存
+# SECTION 9: マニフェスト保存
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _save_manifest(df: pd.DataFrame, out_dir: Path, version: str) -> None:
@@ -393,7 +573,7 @@ def _save_manifest(df: pd.DataFrame, out_dir: Path, version: str) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 9: メイン
+# SECTION 10: メイン
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def main() -> None:
@@ -426,20 +606,25 @@ def main() -> None:
     print("\n[5] Building bloodline features...")
     df = _build_sire_features(df)
 
-    print("\n[6] Building labels (lr_label)...")
+    print("\n[6] Building training features (HC/WC)...")
+    hc = _load_hc(cfg)
+    wc = _load_wc(cfg)
+    df = _add_training_features(df, hc, wc)
+
+    print("\n[7] Building labels (lr_label)...")
     df = _build_labels(df)
 
     # 最終的な市場情報混入チェック
     _check_no_market_features(df)
 
     # NaN 率レポート
-    print("\n[7] NaN rate report:")
+    print("\n[8] NaN rate report:")
     _report_nan_rates(df, threshold=0.3)
 
     # 保存
     feat_dir.mkdir(parents=True, exist_ok=True)
     df.to_parquet(out_path, index=False, compression="snappy")
-    print(f"\n[8] Saved: {out_path}")
+    print(f"\n[9] Saved: {out_path}")
     print(f"  rows={len(df):,}, cols={len(df.columns)}")
 
     # 時系列の統計
@@ -458,7 +643,7 @@ def main() -> None:
     # マニフェスト保存
     _save_manifest(df, feat_dir, version)
 
-    print("\n[create_features] Done.")
+    print("\n[10] create_features Done.")
 
 
 if __name__ == "__main__":

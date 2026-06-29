@@ -170,6 +170,105 @@ def preprocess_sk(src_hd: pd.DataFrame, dst_parquet: Path) -> pd.DataFrame:
     return df
 
 
+def preprocess_hc(hc_dir: Path, dst_parquet: Path) -> pd.DataFrame:
+    """HC（坂路調教）CSV全年をまとめて前処理して保存する。"""
+    import glob
+    files = sorted(glob.glob(str(hc_dir / "slop_hc_*.csv")))
+    if not files:
+        raise FileNotFoundError(f"HC CSVが見つかりません: {hc_dir}")
+
+    USE_COLS = [
+        "ketto_num", "training_date", "training_center",
+        "time_4f_total", "time_3f_total", "lap_time_200_0",
+    ]
+    dfs = []
+    for f in files:
+        tmp = pd.read_csv(f, encoding="utf-8-sig", usecols=USE_COLS, dtype=str)
+        dfs.append(tmp)
+    df = pd.concat(dfs, ignore_index=True)
+
+    # 数値変換
+    for col in ["ketto_num", "time_4f_total", "time_3f_total", "lap_time_200_0"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    df["training_center"] = pd.to_numeric(df["training_center"], errors="coerce").astype("Int8")
+
+    # 日付変換
+    df["training_date"] = pd.to_datetime(
+        df["training_date"].astype(str).str.zfill(8), format="%Y%m%d", errors="coerce"
+    )
+
+    # 無効行除外（タイム0 or NaN）
+    df = df[
+        (df["time_3f_total"] > 0) &
+        (df["time_4f_total"] > 0) &
+        (df["lap_time_200_0"] > 0) &
+        df["training_date"].notna() &
+        df["ketto_num"].notna()
+    ].copy()
+
+    # タイム変換: 1/10秒単位 → 実秒 float32
+    df["hc_3f_sec"]  = (df["time_3f_total"]  / 10.0).astype("float32")
+    df["hc_4f_sec"]  = (df["time_4f_total"]  / 10.0).astype("float32")
+    df["hc_200_sec"] = (df["lap_time_200_0"] / 10.0).astype("float32")
+    df["ketto_num"]  = df["ketto_num"].astype(np.int64)
+
+    out_cols = ["ketto_num", "training_date", "training_center", "hc_3f_sec", "hc_4f_sec", "hc_200_sec"]
+    df = df[out_cols].sort_values(["ketto_num", "training_date"]).reset_index(drop=True)
+
+    dst_parquet.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(dst_parquet, index=False, compression="snappy")
+    print(f"[preprocess_hc] saved: {dst_parquet} | rows={len(df):,}")
+    return df
+
+
+def preprocess_wc(wc_dir: Path, dst_parquet: Path) -> pd.DataFrame:
+    """WC（コース調教）CSV全年をまとめて前処理して保存する。"""
+    import glob
+    files = sorted(glob.glob(str(wc_dir / "wood_wc_*.csv")))
+    if not files:
+        raise FileNotFoundError(f"WC CSVが見つかりません: {wc_dir}")
+
+    USE_COLS = [
+        "ketto_num", "training_date", "training_center", "course",
+        "time_4f_total", "time_3f_total", "lap_time_1f_0f",
+    ]
+    dfs = []
+    for f in files:
+        tmp = pd.read_csv(f, encoding="utf-8-sig", usecols=USE_COLS, dtype=str)
+        dfs.append(tmp)
+    df = pd.concat(dfs, ignore_index=True)
+
+    for col in ["ketto_num", "time_4f_total", "time_3f_total", "lap_time_1f_0f"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    df["training_center"] = pd.to_numeric(df["training_center"], errors="coerce").astype("Int8")
+    df["course"] = pd.to_numeric(df["course"], errors="coerce").astype("Int8")
+
+    df["training_date"] = pd.to_datetime(
+        df["training_date"].astype(str).str.zfill(8), format="%Y%m%d", errors="coerce"
+    )
+
+    df = df[
+        (df["time_3f_total"] > 0) &
+        (df["time_4f_total"] > 0) &
+        (df["lap_time_1f_0f"] > 0) &
+        df["training_date"].notna() &
+        df["ketto_num"].notna()
+    ].copy()
+
+    df["wc_3f_sec"] = (df["time_3f_total"]   / 10.0).astype("float32")
+    df["wc_4f_sec"] = (df["time_4f_total"]   / 10.0).astype("float32")
+    df["wc_1f_sec"] = (df["lap_time_1f_0f"] / 10.0).astype("float32")
+    df["ketto_num"] = df["ketto_num"].astype(np.int64)
+
+    out_cols = ["ketto_num", "training_date", "training_center", "course", "wc_3f_sec", "wc_4f_sec", "wc_1f_sec"]
+    df = df[out_cols].sort_values(["ketto_num", "training_date"]).reset_index(drop=True)
+
+    dst_parquet.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(dst_parquet, index=False, compression="snappy")
+    print(f"[preprocess_wc] saved: {dst_parquet} | rows={len(df):,}")
+    return df
+
+
 def main() -> None:
     cfg = load_config()
 
@@ -186,6 +285,12 @@ def main() -> None:
     preprocess_se(hd, dst_dir / "SE_preprocessed.parquet")
     preprocess_ra(hd, dst_dir / "RA_preprocessed.parquet")
     preprocess_sk(hd, dst_dir / "SK_preprocessed.parquet")
+
+    # HC/WC 調教データの前処理
+    hc_dir = Path(cfg["data"]["hc_dir"])
+    wc_dir = Path(cfg["data"]["wc_dir"])
+    preprocess_hc(hc_dir, dst_dir / "HC_preprocessed.parquet")
+    preprocess_wc(wc_dir, dst_dir / "WC_preprocessed.parquet")
 
     print("\n[preprocess] Done.")
 
