@@ -2,7 +2,8 @@
 create_features.py — RaceAI_var1.0 特徴量生成スクリプト
 
 01_preprocessed/ の Parquet から特徴量を生成し
-02_features/features_v1.parquet を出力する。
+02_features/features_{version}.parquet を出力する。
+バージョンは pure_rank/config/train_config.json の features_version で管理する。
 
 禁止事項:
 - オッズ・人気 (odds, popularity) を特徴量に含めない
@@ -256,7 +257,7 @@ def _build_hist_features(df: pd.DataFrame) -> pd.DataFrame:
             lambda x: x.shift(1).expanding().mean()
         )
     )
-    df["_is_top_grade"] = df["grade_code"].isin([1, 2, 3]).astype(np.int8)
+    df["_is_top_grade"] = (df["grade_code"] >= 5).astype(np.int8)
     df["hist_top_grade_exp_count"] = df.groupby("ketto_num")["_is_top_grade"].transform(
         lambda x: x.shift(1).expanding().sum()
     )
@@ -269,8 +270,23 @@ def _build_hist_features(df: pd.DataFrame) -> pd.DataFrame:
         )
     )
 
+    # ─── クラス移動特徴量 ──────────────────────────────────────────────────────────
+    # grade_code は大きいほど格上（=1: 条件戦, =5: OP, =7: 重賞）
+    # 過去の最高格（最大 grade_code = 格上）
+    df["hist_best_grade_ever"] = grp_horse["grade_code"].transform(
+        lambda x: x.shift(1).expanding().max()
+    )
+    # 今回 grade_code と過去最高格の差（正=格下出走=有利, 負=格上挑戦=不利）
+    df["hist_grade_diff"] = df["hist_best_grade_ever"] - df["grade_code"]
+
+    # 重賞（grade_code >= 7）での過去平均着順（NaN率80〜90%は想定通り）
+    df["_rank_top_grade"] = df["finish_rank"].where(df["grade_code"] >= 7, other=np.nan)
+    df["hist_avg_rank_top_grade"] = df.groupby("ketto_num")["_rank_top_grade"].transform(
+        lambda x: x.shift(1).expanding().mean()
+    )
+
     # 一時列を削除
-    df = df.drop(columns=["_time_dev", "_is_top_grade", "_dist_bin_100"])
+    df = df.drop(columns=["_time_dev", "_is_top_grade", "_dist_bin_100", "_rank_top_grade"])
     return df
 
 
@@ -293,12 +309,7 @@ def _build_current_features(df: pd.DataFrame) -> pd.DataFrame:
     df["wakuban_surface"] = df["wakuban"].astype(float) * surface_sign
 
     # ─── フィールド強度（SECTION 3完了後に依存） ─────────────────────────────────
-    # 新馬(hist_win_rate=NaN)は 0 として field 平均を計算
-    win_rate_filled = df["hist_win_rate"].fillna(0)
-    df["field_avg_win_rate"] = df.groupby("race_id")[win_rate_filled.name].transform(
-        lambda x: win_rate_filled.loc[x.index].mean()
-    )
-    # groupby+transform では Series を直接参照できないため fillna後の列を使う
+    # 新馬(hist_win_rate=NaN)は 0 として fillna してから groupby で平均を取る
     df["_hist_win_rate_filled"] = df["hist_win_rate"].fillna(0)
     df["field_avg_win_rate"] = df.groupby("race_id")["_hist_win_rate_filled"].transform("mean")
     df["field_avg_prize"] = df.groupby("race_id")["hist_avg_prize_3"].transform("mean")
@@ -311,32 +322,98 @@ def _build_current_features(df: pd.DataFrame) -> pd.DataFrame:
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 5: BLOODLINE FEATURES
-# 父馬・母父の産駒成績。
-# 注意: Phase 1 では全期間の統計を使用（軽微な前方参照バイアスあり）。
-#       正確な時系列計算は Phase 3 以降で実装予定。
+# 父馬・母父の産駒成績（Phase 3: 時系列正確版）。
+# 日次集計 → 累積 → shift(1) でリーク防止済み。
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _build_sire_features(df: pd.DataFrame) -> pd.DataFrame:
-    """父馬・母父産駒の成績を集計して特徴量にする。
+    """父馬・母父産駒の成績を時系列正確版で計算する。
 
-    Phase 1 実装方針:
-    - 全期間データで sire_id / bms_id の勝率・平均距離を集計
-    - 軽微な前方参照バイアスがあるが、血統特性は時間的に安定しており
-      Phase 1 ベースラインとして許容する
-    - Phase 3 で正確な時系列制限版に置き換える予定
+    アプローチ: 日次集計 → 累積 → shift(1) → メイン df にマージ
+    理由: 同一 sire_id の産駒が同日複数レースに出走しうるため、
+         ketto_num 単位の shift(1) では同日他産駒の結果が混入する。
+         日次集計後に shift(1) することで当日を含まない累計を保証する。
     """
-    # ─── 父馬産駒の同馬場勝率 ─────────────────────────────────────────────────
-    # groupby(['sire_id', 'surface_code']) での通算勝率
-    if "sire_id" in df.columns and df["sire_id"].notna().any():
-        sire_surf_wr = (
-            df.groupby(["sire_id", "surface_code"], observed=True)["is_win"]
-            .mean()
-            .reset_index()
-            .rename(columns={"is_win": "hist_sire_surface_win_rate"})
-        )
-        df = df.merge(sire_surf_wr, on=["sire_id", "surface_code"], how="left")
+    # 産駒数が少ない父馬（新種牡馬等）の累積勝率はS/N比が低くノイズになるため、
+    # cum_races_prev < MIN_SIRE_RACES の場合は NaN を設定し、
+    # LightGBM の欠損値分岐に処理を委ねる。
+    MIN_SIRE_RACES = 30
 
-        # 父馬産駒の平均勝ち距離（勝ちレースのみ）
+    # ─── sire 特徴量 ──────────────────────────────────────────────────────────
+    if "sire_id" not in df.columns or df["sire_id"].isna().all():
+        for col in ["hist_sire_win_rate_ts", "hist_sire_surface_win_rate_ts",
+                    "hist_sire_dist_win_rate_ts", "hist_sire_dist_diff"]:
+            df[col] = np.nan
+    else:
+        # ── 通算勝率（sire × race_date） ──────────────────────────────────────
+        sire_daily = (
+            df.groupby(["sire_id", "race_date"], observed=True)
+            .agg(d_wins=("is_win", "sum"), d_races=("is_win", "count"))
+            .reset_index()
+            .sort_values(["sire_id", "race_date"])
+        )
+        grp_s = sire_daily.groupby("sire_id", observed=True)
+        sire_daily["cum_wins"]  = grp_s["d_wins"].cumsum()
+        sire_daily["cum_races"] = grp_s["d_races"].cumsum()
+        sire_daily["cum_wins_prev"]  = grp_s["cum_wins"].shift(1)
+        sire_daily["cum_races_prev"] = grp_s["cum_races"].shift(1)
+        sire_daily["hist_sire_win_rate_ts"] = (
+            sire_daily["cum_wins_prev"] / sire_daily["cum_races_prev"]
+        )
+        # 産駒データが少ない場合のNaNマスク（ノイズ抑制）
+        sire_daily.loc[sire_daily["cum_races_prev"] < MIN_SIRE_RACES, "hist_sire_win_rate_ts"] = np.nan
+        df = df.merge(
+            sire_daily[["sire_id", "race_date", "hist_sire_win_rate_ts"]],
+            on=["sire_id", "race_date"], how="left"
+        )
+
+        # ── 同馬場勝率（sire × surface_code × race_date） ───────────────────────
+        sire_surf = (
+            df.groupby(["sire_id", "surface_code", "race_date"], observed=True)
+            .agg(d_wins=("is_win", "sum"), d_races=("is_win", "count"))
+            .reset_index()
+            .sort_values(["sire_id", "surface_code", "race_date"])
+        )
+        grp_ss = sire_surf.groupby(["sire_id", "surface_code"], observed=True)
+        sire_surf["cum_wins"]  = grp_ss["d_wins"].cumsum()
+        sire_surf["cum_races"] = grp_ss["d_races"].cumsum()
+        sire_surf["cum_wins_prev"]  = grp_ss["cum_wins"].shift(1)
+        sire_surf["cum_races_prev"] = grp_ss["cum_races"].shift(1)
+        sire_surf["hist_sire_surface_win_rate_ts"] = (
+            sire_surf["cum_wins_prev"] / sire_surf["cum_races_prev"]
+        )
+        # 産駒データが少ない場合のNaNマスク（ノイズ抑制）
+        sire_surf.loc[sire_surf["cum_races_prev"] < MIN_SIRE_RACES, "hist_sire_surface_win_rate_ts"] = np.nan
+        df = df.merge(
+            sire_surf[["sire_id", "surface_code", "race_date",
+                        "hist_sire_surface_win_rate_ts"]],
+            on=["sire_id", "surface_code", "race_date"], how="left"
+        )
+
+        # ── 同距離帯勝率（sire × distance_category × race_date） ─────────────────
+        sire_dist = (
+            df.groupby(["sire_id", "distance_category", "race_date"], observed=True)
+            .agg(d_wins=("is_win", "sum"), d_races=("is_win", "count"))
+            .reset_index()
+            .sort_values(["sire_id", "distance_category", "race_date"])
+        )
+        grp_sd = sire_dist.groupby(["sire_id", "distance_category"], observed=True)
+        sire_dist["cum_wins"]  = grp_sd["d_wins"].cumsum()
+        sire_dist["cum_races"] = grp_sd["d_races"].cumsum()
+        sire_dist["cum_wins_prev"]  = grp_sd["cum_wins"].shift(1)
+        sire_dist["cum_races_prev"] = grp_sd["cum_races"].shift(1)
+        sire_dist["hist_sire_dist_win_rate_ts"] = (
+            sire_dist["cum_wins_prev"] / sire_dist["cum_races_prev"]
+        )
+        # 産駒データが少ない場合のNaNマスク（ノイズ抑制）
+        sire_dist.loc[sire_dist["cum_races_prev"] < MIN_SIRE_RACES, "hist_sire_dist_win_rate_ts"] = np.nan
+        df = df.merge(
+            sire_dist[["sire_id", "distance_category", "race_date",
+                        "hist_sire_dist_win_rate_ts"]],
+            on=["sire_id", "distance_category", "race_date"], how="left"
+        )
+
+        # ── 父産駒の平均勝ち距離との差（全期間統計、距離適性は安定のため許容） ─────
         sire_wins = df[df["is_win"] == 1]
         if len(sire_wins) > 0:
             sire_avg_dist = (
@@ -346,27 +423,401 @@ def _build_sire_features(df: pd.DataFrame) -> pd.DataFrame:
                 .rename(columns={"distance": "_sire_avg_win_dist"})
             )
             df = df.merge(sire_avg_dist, on="sire_id", how="left")
-            df["hist_sire_dist_diff"] = (
-                (df["distance"] - df["_sire_avg_win_dist"]).abs()
-            )
+            df["hist_sire_dist_diff"] = (df["distance"] - df["_sire_avg_win_dist"]).abs()
             df = df.drop(columns=["_sire_avg_win_dist"])
         else:
             df["hist_sire_dist_diff"] = np.nan
-    else:
-        df["hist_sire_surface_win_rate"] = np.nan
-        df["hist_sire_dist_diff"] = np.nan
 
-    # ─── 母父（BMS）産駒の通算勝率 ─────────────────────────────────────────────
-    if "bms_id" in df.columns and df["bms_id"].notna().any():
-        bms_wr = (
-            df.groupby("bms_id", observed=True)["is_win"]
-            .mean()
-            .reset_index()
-            .rename(columns={"is_win": "hist_bms_win_rate"})
-        )
-        df = df.merge(bms_wr, on="bms_id", how="left")
+    # ─── bms 特徴量 ──────────────────────────────────────────────────────────
+    if "bms_id" not in df.columns or df["bms_id"].isna().all():
+        df["hist_bms_win_rate_ts"] = np.nan
     else:
-        df["hist_bms_win_rate"] = np.nan
+        bms_daily = (
+            df.groupby(["bms_id", "race_date"], observed=True)
+            .agg(d_wins=("is_win", "sum"), d_races=("is_win", "count"))
+            .reset_index()
+            .sort_values(["bms_id", "race_date"])
+        )
+        grp_b = bms_daily.groupby("bms_id", observed=True)
+        bms_daily["cum_wins"]  = grp_b["d_wins"].cumsum()
+        bms_daily["cum_races"] = grp_b["d_races"].cumsum()
+        bms_daily["cum_wins_prev"]  = grp_b["cum_wins"].shift(1)
+        bms_daily["cum_races_prev"] = grp_b["cum_races"].shift(1)
+        bms_daily["hist_bms_win_rate_ts"] = (
+            bms_daily["cum_wins_prev"] / bms_daily["cum_races_prev"]
+        )
+        # 産駒データが少ない場合のNaNマスク（ノイズ抑制）
+        bms_daily.loc[bms_daily["cum_races_prev"] < MIN_SIRE_RACES, "hist_bms_win_rate_ts"] = np.nan
+        df = df.merge(
+            bms_daily[["bms_id", "race_date", "hist_bms_win_rate_ts"]],
+            on=["bms_id", "race_date"], how="left"
+        )
+
+    return df
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SECTION 5.5: JOCKEY / TRAINER FEATURES
+# 騎手・調教師の成績特徴量（Phase 4: 時系列正確版）。
+# 日次集計 → 累積/rolling → shift(1)/closed='left' でリーク防止済み。
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _build_jockey_trainer_features(df: pd.DataFrame) -> pd.DataFrame:
+    """騎手・調教師の成績特徴量を時系列正確版で計算する。
+
+    アプローチ:
+    - 通算勝率: 日次集計 → cumsum → shift(1) でリーク防止
+    - 直近N日勝率: 日次集計 → GroupBy.rolling(ND, closed='left') でリーク防止
+
+    騎手/調教師は同日に複数レースに関与しうるため（実測: 騎手76.7%・調教師74.8%）、
+    エントリ単位の shift(1) では同日他レースの結果が混入する。
+    日次集計後に処理することで当日を完全除外する。
+    """
+    # 分母が少ない場合は NaN としてノイズを抑制する（LightGBM の欠損値分岐に委ねる）
+    MIN_JOCKEY_RACES = 10
+    MIN_TRAINER_RACES = 10
+
+    # ══════════════════════════════════════════════════════════════════════
+    # 騎手特徴量
+    # ══════════════════════════════════════════════════════════════════════
+
+    # ─── Step J-1: 日次集計（jockey × date） ─────────────────────────────────
+    jockey_daily = (
+        df.groupby(["jockey_code", "race_date"], observed=True)
+        .agg(
+            d_wins=("is_win", "sum"),
+            d_races=("is_win", "count"),
+            d_place=("is_place", "sum"),
+        )
+        .reset_index()
+        .sort_values(["jockey_code", "race_date"])
+        .reset_index(drop=True)
+    )
+
+    # ─── Step J-2: 通算勝率（cumulative + shift(1) で当日を除外） ─────────────
+    grp_j = jockey_daily.groupby("jockey_code", observed=True)
+    jockey_daily["cum_wins"]       = grp_j["d_wins"].cumsum()
+    jockey_daily["cum_races"]      = grp_j["d_races"].cumsum()
+    jockey_daily["cum_wins_prev"]  = grp_j["cum_wins"].shift(1)
+    jockey_daily["cum_races_prev"] = grp_j["cum_races"].shift(1)
+    jockey_daily["hist_jockey_win_rate_cum"] = (
+        jockey_daily["cum_wins_prev"] / jockey_daily["cum_races_prev"]
+    )
+    # 出走数が少ない場合はNaN（デビュー直後のノイズ抑制）
+    jockey_daily.loc[
+        jockey_daily["cum_races_prev"] < MIN_JOCKEY_RACES,
+        "hist_jockey_win_rate_cum",
+    ] = np.nan
+
+    df = df.merge(
+        jockey_daily[["jockey_code", "race_date", "hist_jockey_win_rate_cum"]],
+        on=["jockey_code", "race_date"],
+        how="left",
+    )
+
+    # ─── Step J-3: rolling 30D・60D 勝率（closed='left' で当日除外） ────────────
+    # GroupBy.rolling を使うことで apply より効率的に時系列ウィンドウを計算する。
+    # closed='left': ウィンドウ = [race_date - ND, race_date) → 当日を除外する。
+    jd_idx = jockey_daily.set_index("race_date")
+
+    for n_days in [30, 60]:
+        roll = (
+            jd_idx.groupby("jockey_code", observed=True)[["d_wins", "d_races", "d_place"]]
+            .rolling(f"{n_days}D", closed="left")
+            .sum()
+            .reset_index()  # → columns: jockey_code, race_date, d_wins, d_races, d_place
+            .rename(columns={
+                "d_wins":  f"roll_wins_{n_days}d",
+                "d_races": f"roll_races_{n_days}d",
+                "d_place": f"roll_place_{n_days}d",
+            })
+        )
+
+        # 勝率
+        roll[f"hist_jockey_win_rate_{n_days}d"] = (
+            roll[f"roll_wins_{n_days}d"] / roll[f"roll_races_{n_days}d"]
+        )
+        roll.loc[
+            roll[f"roll_races_{n_days}d"] < MIN_JOCKEY_RACES,
+            f"hist_jockey_win_rate_{n_days}d",
+        ] = np.nan
+
+        merge_cols = ["jockey_code", "race_date", f"hist_jockey_win_rate_{n_days}d"]
+
+        # 30D のみ複勝率を追加（60D は重複情報となるため省略）
+        if n_days == 30:
+            roll["hist_jockey_place_rate_30d"] = (
+                roll["roll_place_30d"] / roll["roll_races_30d"]
+            )
+            roll.loc[
+                roll["roll_races_30d"] < MIN_JOCKEY_RACES,
+                "hist_jockey_place_rate_30d",
+            ] = np.nan
+            merge_cols.append("hist_jockey_place_rate_30d")
+
+        df = df.merge(roll[merge_cols], on=["jockey_code", "race_date"], how="left")
+
+    # ─── Step J-4: 騎手×競馬場 通算勝率（cumulative + shift(1)） ────────────────
+    # rolling ではなく cumulative を採用する理由: コース別は30日間のサンプルが
+    # 極端に少なく（数レース程度）、累積の方が安定した適性スコアを提供する。
+    jc_daily = (
+        df.groupby(["jockey_code", "course_code", "race_date"], observed=True)
+        .agg(d_wins=("is_win", "sum"), d_races=("is_win", "count"))
+        .reset_index()
+        .sort_values(["jockey_code", "course_code", "race_date"])
+        .reset_index(drop=True)
+    )
+    grp_jc = jc_daily.groupby(["jockey_code", "course_code"], observed=True)
+    jc_daily["cum_wins"]       = grp_jc["d_wins"].cumsum()
+    jc_daily["cum_races"]      = grp_jc["d_races"].cumsum()
+    jc_daily["cum_wins_prev"]  = grp_jc["cum_wins"].shift(1)
+    jc_daily["cum_races_prev"] = grp_jc["cum_races"].shift(1)
+    jc_daily["hist_jockey_course_win_rate"] = (
+        jc_daily["cum_wins_prev"] / jc_daily["cum_races_prev"]
+    )
+    jc_daily.loc[
+        jc_daily["cum_races_prev"] < MIN_JOCKEY_RACES,
+        "hist_jockey_course_win_rate",
+    ] = np.nan
+
+    df = df.merge(
+        jc_daily[["jockey_code", "course_code", "race_date", "hist_jockey_course_win_rate"]],
+        on=["jockey_code", "course_code", "race_date"],
+        how="left",
+    )
+
+    # ══════════════════════════════════════════════════════════════════════
+    # 調教師特徴量
+    # ══════════════════════════════════════════════════════════════════════
+
+    # ─── Step T-1: 日次集計（trainer × date） ─────────────────────────────────
+    trainer_daily = (
+        df.groupby(["trainer_code", "race_date"], observed=True)
+        .agg(d_wins=("is_win", "sum"), d_races=("is_win", "count"))
+        .reset_index()
+        .sort_values(["trainer_code", "race_date"])
+        .reset_index(drop=True)
+    )
+
+    # ─── Step T-2: 通算勝率（cumulative + shift(1)） ─────────────────────────
+    grp_t = trainer_daily.groupby("trainer_code", observed=True)
+    trainer_daily["cum_wins"]       = grp_t["d_wins"].cumsum()
+    trainer_daily["cum_races"]      = grp_t["d_races"].cumsum()
+    trainer_daily["cum_wins_prev"]  = grp_t["cum_wins"].shift(1)
+    trainer_daily["cum_races_prev"] = grp_t["cum_races"].shift(1)
+    trainer_daily["hist_trainer_win_rate_cum"] = (
+        trainer_daily["cum_wins_prev"] / trainer_daily["cum_races_prev"]
+    )
+    trainer_daily.loc[
+        trainer_daily["cum_races_prev"] < MIN_TRAINER_RACES,
+        "hist_trainer_win_rate_cum",
+    ] = np.nan
+
+    df = df.merge(
+        trainer_daily[["trainer_code", "race_date", "hist_trainer_win_rate_cum"]],
+        on=["trainer_code", "race_date"],
+        how="left",
+    )
+
+    # ─── Step T-3: rolling 30D・60D 勝率（closed='left' で当日除外） ────────────
+    td_idx = trainer_daily.set_index("race_date")
+
+    for n_days in [30, 60]:
+        roll = (
+            td_idx.groupby("trainer_code", observed=True)[["d_wins", "d_races"]]
+            .rolling(f"{n_days}D", closed="left")
+            .sum()
+            .reset_index()
+            .rename(columns={
+                "d_wins":  f"roll_wins_{n_days}d",
+                "d_races": f"roll_races_{n_days}d",
+            })
+        )
+        roll[f"hist_trainer_win_rate_{n_days}d"] = (
+            roll[f"roll_wins_{n_days}d"] / roll[f"roll_races_{n_days}d"]
+        )
+        roll.loc[
+            roll[f"roll_races_{n_days}d"] < MIN_TRAINER_RACES,
+            f"hist_trainer_win_rate_{n_days}d",
+        ] = np.nan
+
+        df = df.merge(
+            roll[["trainer_code", "race_date", f"hist_trainer_win_rate_{n_days}d"]],
+            on=["trainer_code", "race_date"],
+            how="left",
+        )
+
+    # ─── Step T-4: 調教師×馬場種別 通算勝率（cumulative + shift(1)） ────────────
+    # 芝・ダート適性は安定した長期特性のため cumulative を採用する。
+    ts_daily = (
+        df.groupby(["trainer_code", "surface_code", "race_date"], observed=True)
+        .agg(d_wins=("is_win", "sum"), d_races=("is_win", "count"))
+        .reset_index()
+        .sort_values(["trainer_code", "surface_code", "race_date"])
+        .reset_index(drop=True)
+    )
+    grp_ts = ts_daily.groupby(["trainer_code", "surface_code"], observed=True)
+    ts_daily["cum_wins"]       = grp_ts["d_wins"].cumsum()
+    ts_daily["cum_races"]      = grp_ts["d_races"].cumsum()
+    ts_daily["cum_wins_prev"]  = grp_ts["cum_wins"].shift(1)
+    ts_daily["cum_races_prev"] = grp_ts["cum_races"].shift(1)
+    ts_daily["hist_trainer_surface_win_rate"] = (
+        ts_daily["cum_wins_prev"] / ts_daily["cum_races_prev"]
+    )
+    ts_daily.loc[
+        ts_daily["cum_races_prev"] < MIN_TRAINER_RACES,
+        "hist_trainer_surface_win_rate",
+    ] = np.nan
+
+    df = df.merge(
+        ts_daily[["trainer_code", "surface_code", "race_date", "hist_trainer_surface_win_rate"]],
+        on=["trainer_code", "surface_code", "race_date"],
+        how="left",
+    )
+
+    return df
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SECTION 5.6: SPEED INDEX FEATURES
+# タイム速度指数（Phase 5: 歴史的条件別基準による標準化）。
+# 日次集計 → cumsum → shift(1) で当日を除外したリーク防止済み計算。
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _build_speed_index_features(df: pd.DataFrame) -> pd.DataFrame:
+    """歴史的条件別基準による速度指数特徴量を生成する。
+
+    アプローチ:
+    - 条件グループ (distance[m], surface_code, track_condition_code) 別に
+      日次集計 → cumsum → shift(1) で当日を除外した平均・標準偏差を計算する
+    - distance_category（粗い区分）ではなく distance（実距離m）を使う。
+      カテゴリ内の異なる距離が混在すると speed_idx が距離バイアスを吸収してしまうため。
+    - _speed_idx = (cond_avg_time - racetime) / cond_std_time を計算し、
+      馬別に shift(1) を適用して horse-level 特徴量を生成する
+    - _speed_idx 自体（当該レースの結果情報を含む）は最後に削除する
+
+    Notes
+    -----
+    - df には racetime, distance, surface_code, track_condition_code,
+      ketto_num, race_date が必要（_build_hist_features 後の df に全て存在する）
+    - _build_hist_features 内で計算・削除済みの _time_dev は再計算しない
+    - この関数は _build_hist_features の後・_build_current_features の前に呼ぶこと
+    """
+    # 速度指数の基準値を計算するのに必要な最低レース数
+    # この値未満の条件では標準偏差が不安定なため NaN マスクを適用する
+    MIN_COND_RACES = 20
+
+    # ─── Step 1: 条件別・日次集計 ──────────────────────────────────────────────
+    # 同じ条件（distance × surface_code × track_condition_code）で
+    # 同日に複数レースが開催される場合があるため、日次で先に集約する。
+    # distance_category（粗いカテゴリ）ではなく distance（実距離m）で集計する。
+    # 理由: カテゴリ内で異なる距離（例: 1000m〜1400m）が混在すると
+    #       speed_idx が「馬の能力」ではなく「どの距離を走ったか」を反映してしまう。
+    cond_daily = (
+        df.groupby(
+            ["distance", "surface_code", "track_condition_code", "race_date"],
+            observed=True,
+        )
+        .agg(
+            d_sum_time=("racetime", "sum"),
+            d_sum_sq_time=("racetime", lambda x: (x ** 2).sum()),
+            d_count=("racetime", "count"),
+        )
+        .reset_index()
+        .sort_values(
+            ["distance", "surface_code", "track_condition_code", "race_date"]
+        )
+        .reset_index(drop=True)
+    )
+
+    # ─── Step 2: 条件グループ内での cumsum ────────────────────────────────────
+    grp_cond = cond_daily.groupby(
+        ["distance", "surface_code", "track_condition_code"],
+        observed=True,
+    )
+    cond_daily["cum_sum"]   = grp_cond["d_sum_time"].cumsum()
+    cond_daily["cum_sq"]    = grp_cond["d_sum_sq_time"].cumsum()
+    cond_daily["cum_count"] = grp_cond["d_count"].cumsum()
+
+    # ─── Step 3: shift(1) で当日を除いた前日以前の累積を取得 ──────────────────
+    cond_daily["cum_sum_prev"]   = grp_cond["cum_sum"].shift(1)
+    cond_daily["cum_sq_prev"]    = grp_cond["cum_sq"].shift(1)
+    cond_daily["cum_count_prev"] = grp_cond["cum_count"].shift(1)
+
+    # ─── Step 4: 平均・分散・標準偏差の計算 ────────────────────────────────────
+    # Welford 公式: Var(X) = E[X^2] - (E[X])^2
+    # 浮動小数点誤差で分散が微小な負値になることがあるため clip(lower=0) が必須
+    cond_daily["cond_avg_time"] = (
+        cond_daily["cum_sum_prev"] / cond_daily["cum_count_prev"]
+    )
+    cond_daily["cond_var_time"] = (
+        cond_daily["cum_sq_prev"] / cond_daily["cum_count_prev"]
+        - cond_daily["cond_avg_time"] ** 2
+    )
+    cond_daily["cond_std_time"] = np.sqrt(
+        cond_daily["cond_var_time"].clip(lower=0)
+    )
+
+    # 最低レース数未満の条件は NaN マスク（標準偏差が不安定なためノイズ抑制）
+    low_count_mask = cond_daily["cum_count_prev"] < MIN_COND_RACES
+    cond_daily.loc[low_count_mask, "cond_avg_time"] = np.nan
+    cond_daily.loc[low_count_mask, "cond_std_time"] = np.nan
+
+    # ─── Step 5: df にマージ ──────────────────────────────────────────────────
+    df = df.merge(
+        cond_daily[
+            [
+                "distance", "surface_code", "track_condition_code",
+                "race_date", "cond_avg_time", "cond_std_time",
+            ]
+        ],
+        on=["distance", "surface_code", "track_condition_code", "race_date"],
+        how="left",
+    )
+
+    # ─── Step 6: 速度指数の計算 ────────────────────────────────────────────────
+    # 正の値 = 歴史的平均より速い = 高能力
+    # cond_std_time == 0 の場合（全馬同タイム）は NaN を設定する
+    df["_speed_idx"] = np.where(
+        df["cond_std_time"] > 0,
+        (df["cond_avg_time"] - df["racetime"]) / df["cond_std_time"],
+        np.nan,
+    )
+
+    # ─── Step 7: 馬別 shift(1) で horse-level 特徴量を生成 ───────────────────
+    # _build_hist_features の sort_values が継続している前提だが、念のため保証する
+    df = df.sort_values(["ketto_num", "race_date"]).reset_index(drop=True)
+    grp_horse = df.groupby("ketto_num")
+
+    # 前走の速度指数（最もリークから遠い、最重要候補）
+    df["hist_speed_idx_last"] = grp_horse["_speed_idx"].transform(
+        lambda x: x.shift(1)
+    )
+
+    # 過去最高速度指数（能力の上限値）
+    df["hist_speed_idx_best"] = grp_horse["_speed_idx"].transform(
+        lambda x: x.shift(1).expanding().max()
+    )
+
+    # 直近3走の速度指数平均（安定した能力推定。hist_avg_time_dev_3 の絶対スケール版）
+    df["hist_speed_idx_avg3"] = grp_horse["_speed_idx"].transform(
+        lambda x: x.shift(1).rolling(3, min_periods=1).mean()
+    )
+
+    # 同条件（実距離×馬場種別）での過去最高速度指数（条件適性の絶対評価）
+    # distance_category ではなく distance を使うことで他の speed_idx 系と一貫性を保つ
+    df["hist_speed_idx_cond_best"] = (
+        df.groupby(["ketto_num", "distance", "surface_code"])["_speed_idx"]
+        .transform(lambda x: x.shift(1).expanding().max())
+    )
+
+    # ─── Step 8: 一時列を削除 ─────────────────────────────────────────────────
+    # _speed_idx は当該レースの結果情報を含むため特徴量として残してはならない
+    # cond_avg_time / cond_std_time も中間計算値であり不要
+    df = df.drop(
+        columns=["_speed_idx", "cond_avg_time", "cond_std_time"],
+        errors="ignore",
+    )
 
     return df
 
@@ -658,6 +1109,12 @@ def main() -> None:
     print("\n[5] Building bloodline features...")
     df = _build_sire_features(df)
 
+    print("\n[5.5] Building jockey/trainer features...")
+    df = _build_jockey_trainer_features(df)
+
+    print("\n[5.6] Building speed index features (hist_speed_idx_*)...")
+    df = _build_speed_index_features(df)
+
     print("\n[6] Building training features (HC/WC)...")
     hc = _load_hc(cfg)
     wc = _load_wc(cfg)
@@ -673,7 +1130,15 @@ def main() -> None:
     print("\n[8] NaN rate report:")
     _report_nan_rates(df, threshold=0.3)
 
-    # 保存
+    # 保存前に行順序を LambdaRank グループ割り当て用に修正する。
+    # 中間処理では ketto_num 順（shift(1) 効率化）を使うが、
+    # parquet の行順序は (race_date, race_id, horse_num) でなければならない。
+    # get_group_sizes(sort=False) が正しいグループを返す前提がこれ。
+    sort_cols = ["race_date", "race_id", "horse_num"]
+    available_sort_cols = [c for c in sort_cols if c in df.columns]
+    df = df.sort_values(available_sort_cols).reset_index(drop=True)
+    print(f"\n[8.5] Final row ordering: {available_sort_cols}")
+
     feat_dir.mkdir(parents=True, exist_ok=True)
     df.to_parquet(out_path, index=False, compression="snappy")
     print(f"\n[9] Saved: {out_path}")

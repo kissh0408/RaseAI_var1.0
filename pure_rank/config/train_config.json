@@ -4,7 +4,7 @@
     "metric": "ndcg",
     "ndcg_eval_at": [1, 3, 5],
     "label_gain": [0, 1, 3, 7, 15, 31, 63],
-    "num_leaves": 31,
+    "num_leaves": 63,
     "min_child_samples": 50,
     "reg_alpha": 1.0,
     "reg_lambda": 2.0,
@@ -25,7 +25,7 @@
     "preprocessed_dir": "pure_rank/data/01_preprocessed",
     "features_dir": "pure_rank/data/02_features",
     "models_dir": "pure_rank/models",
-    "features_version": "v3",
+    "features_version": "v29_fixed",
     "hc_dir": "C:/Users/syugo/AI/RaceAI_var1.0/common/data/output/slop_hc",
     "wc_dir": "C:/Users/syugo/AI/RaceAI_var1.0/common/data/output/wood_wc"
   },

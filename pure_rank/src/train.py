@@ -85,38 +85,38 @@ def get_feature_cols(df: pd.DataFrame, cfg: dict) -> list[str]:
 
 
 def get_group_sizes(df: pd.DataFrame, race_id_col: str = "race_id") -> list[int]:
-    """LightGBM LambdaRank 用 group 配列（レースごとの頭数リスト）を返す。"""
+    """LightGBM LambdaRank 用 group 配列（レースごとの頭数リスト）を返す。
+
+    前提: df は (race_date, race_id, horse_num) 順に並んでいなければならない。
+    sort=False は行順を尊重するため、parquet の行順序が正しい場合のみ正確な
+    グループ割り当てになる。create_features.py でこのソートを保証している。
+    """
     return df.groupby(race_id_col, sort=False).size().tolist()
 
 
 # ─── 時系列 Fold 定義 ─────────────────────────────────────────────────────────
 
-# 3-fold 時系列 CV の valid 期間
-# Fold 1: 〜2021, valid=2022  Fold 2: 〜2022, valid=2023  Fold 3: 〜2023, valid=2024
-FOLD_VALID_RANGES = [
-    ("2022-01-01", "2022-12-31"),
-    ("2023-01-01", "2023-12-31"),
-    ("2024-01-01", "2024-12-31"),
-]
-
-
 def get_fold_split(
-    df: pd.DataFrame, fold: int
+    df: pd.DataFrame, fold: int, fold_valid_years: list[str]
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """fold 番号（1-indexed）に対応する train / valid を返す。
+
+    fold_valid_years は train_config.json の training.fold_valid_years から渡す。
+    各 year は "YYYY" 形式で、valid 期間は "{year}-01-01" 〜 "{year}-12-31" とする。
 
     Parameters
     ----------
     df : 全学習対象データ（テスト期間を含まない）
     fold : 1, 2, 3
+    fold_valid_years : config の training.fold_valid_years（例: ["2022", "2023", "2024"]）
 
     Returns
     -------
     (train_df, valid_df)
     """
-    valid_start, valid_end = FOLD_VALID_RANGES[fold - 1]
-    valid_start_ts = pd.Timestamp(valid_start)
-    valid_end_ts = pd.Timestamp(valid_end)
+    year = fold_valid_years[fold - 1]
+    valid_start_ts = pd.Timestamp(f"{year}-01-01")
+    valid_end_ts = pd.Timestamp(f"{year}-12-31")
 
     train_df = df[df["race_date"] < valid_start_ts].copy()
     valid_df = df[
@@ -248,7 +248,7 @@ def main() -> None:
             model_path = models_dir / f"lambdarank_fold{fold}_seed{seed}.txt"
 
             print(f"\n--- Fold {fold} / Seed {seed} ---")
-            train_df, valid_df = get_fold_split(df_train_pool, fold)
+            train_df, valid_df = get_fold_split(df_train_pool, fold, training_cfg["fold_valid_years"])
             print(f"  Train: {len(train_df):,} rows, {train_df['race_id'].nunique():,} races "
                   f"({train_df['race_date'].min().date()} - {train_df['race_date'].max().date()})")
             print(f"  Valid: {len(valid_df):,} rows, {valid_df['race_id'].nunique():,} races "
