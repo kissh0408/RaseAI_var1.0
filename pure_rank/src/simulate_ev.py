@@ -124,7 +124,7 @@ def _collect_bets_per_race(
     テストセット全レース分のベット情報を1行1レースの DataFrame として返す。
 
     ワイド EV は WideOdds 事前オッズを使った真の期待値で計算する:
-      EV_wide = P_wide x wide_odds / 100（odds は 100 円あたりの払戻倍率）
+      EV_wide = P_wide x wide_odds（odds は decimal 倍率、100円ベットで odds×100円返却）
     オッズが取得できないレースは EV_wide = NaN とする。
 
     馬連は WideOdds CSV に含まれないため、引き続き HR 払戻平均を参照値として使用する。
@@ -163,9 +163,9 @@ def _collect_bets_per_race(
         quin_payout = int(quin_lookup.get(rid, {}).get(quin_key, 0))
 
         # ワイド: WideOdds 事前オッズによる真の EV
-        # EV = P_wide x odds / 100（odds は 100 円あたりの払戻倍率）
+        # EV = P_wide x odds（odds は decimal 倍率。/100 は不要）
         prior_odds_wide = wide_odds_lookup.get(rid, {}).get(wide_key, None)
-        ev_wide = (p_wide * prior_odds_wide / 100.0) if prior_odds_wide is not None else float("nan")
+        ev_wide = (p_wide * prior_odds_wide) if prior_odds_wide is not None else float("nan")
 
         # 馬連: HR 払戻平均を使った参照 EV（WideOdds に馬連オッズなし）
         ref_q = quin_payout if quin_payout > 0 else quin_ref_payout
@@ -403,7 +403,7 @@ def _collect_bets_with_calibration(
         p_wide_b = float(probs_base["wide_matrix"][wi_b, wj_b])
         payout_b = int(wide_lookup.get(rid, {}).get(key_b, 0))
         prior_b = wide_odds_lookup.get(rid, {}).get(key_b, None)
-        ev_b = (p_wide_b * prior_b / 100.0) if prior_b is not None else float("nan")
+        ev_b = (p_wide_b * prior_b) if prior_b is not None else float("nan")
 
         # --- 手法1: Platt ---------------------------------------------------
         if platt is not None:
@@ -415,7 +415,7 @@ def _collect_bets_with_calibration(
             p_wide_p = float(probs_p["wide_matrix"][wi_p, wj_p])
             payout_p = int(wide_lookup.get(rid, {}).get(key_p, 0))
             prior_p_val = wide_odds_lookup.get(rid, {}).get(key_p, None)
-            ev_p = (p_wide_p * prior_p_val / 100.0) if prior_p_val is not None else float("nan")
+            ev_p = (p_wide_p * prior_p_val) if prior_p_val is not None else float("nan")
         else:
             p_wide_p = ev_p = float("nan")
             payout_p = 0
@@ -427,7 +427,7 @@ def _collect_bets_with_calibration(
         p_wide_t = float(probs_t["wide_matrix"][wi_t, wj_t])
         payout_t = int(wide_lookup.get(rid, {}).get(key_t, 0))
         prior_t = wide_odds_lookup.get(rid, {}).get(key_t, None)
-        ev_t = (p_wide_t * prior_t / 100.0) if prior_t is not None else float("nan")
+        ev_t = (p_wide_t * prior_t) if prior_t is not None else float("nan")
 
         # --- 手法3: Isotonic ------------------------------------------------
         if isotonic is not None:
@@ -444,7 +444,7 @@ def _collect_bets_with_calibration(
             p_wide_i = float(wide_mat_iso[wi_i, wj_i])
             payout_i = int(wide_lookup.get(rid, {}).get(key_i, 0))
             prior_i = wide_odds_lookup.get(rid, {}).get(key_i, None)
-            ev_i = (p_wide_i * prior_i / 100.0) if prior_i is not None else float("nan")
+            ev_i = (p_wide_i * prior_i) if prior_i is not None else float("nan")
         else:
             p_wide_i = ev_i = float("nan")
             payout_i = 0
