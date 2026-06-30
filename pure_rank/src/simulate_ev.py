@@ -42,17 +42,13 @@ PAIR_KEY = tuple[int, int]
 STAKE = 100.0
 
 
-def _normalize_pair(h1: int, h2: int) -> PAIR_KEY:
-    return (min(h1, h2), max(h1, h2))
-
-
 def _build_hr_lookup(hr_df: pd.DataFrame, bet_type: str) -> dict[str, dict[PAIR_KEY, int]]:
     """race_id -> {(h1,h2): payout} の辞書を構築。"""
     sub = hr_df[hr_df["bet_type"] == bet_type]
     lookup: dict[str, dict[PAIR_KEY, int]] = {}
     for _, row in sub.iterrows():
         rid = str(row["race_id"])
-        key = _normalize_pair(int(row["horse_num_1"]), int(row["horse_num_2"]))
+        key = _norm_pair(int(row["horse_num_1"]), int(row["horse_num_2"]))
         lookup.setdefault(rid, {})[key] = int(row["payout"])
     return lookup
 
@@ -113,6 +109,9 @@ def _collect_bets_per_race(
         wide_payout = int(wide_lookup.get(rid, {}).get(wide_key, 0))
         quin_payout = int(quin_lookup.get(rid, {}).get(quin_key, 0))
 
+        # NOTE: ref_w は HR レコードの結果払戻であり、事前オッズではない。
+        # 真のEV計算には OR レコード（事前ワイドオッズ）が必要。
+        # 現在の実装は参照値として使用しているが、厳密なEV評価ではない。
         # EV: 的中時は実払戻、外れ時は平均参照払戻を使用
         ref_w = wide_payout if wide_payout > 0 else wide_ref_payout
         ref_q = quin_payout if quin_payout > 0 else quin_ref_payout

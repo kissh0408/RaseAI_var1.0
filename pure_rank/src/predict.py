@@ -107,8 +107,6 @@ def harville_place_probs(p_win: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
             denom2 = 1.0 - p[j]
             if denom2 < _DENOM_EPS:
                 continue
-            p_k_given_j1 = p / denom2
-            p_k_given_j1[j] = 0.0
             for k in range(n):
                 if k == i or k == j:
                     continue
@@ -562,6 +560,9 @@ def find_T_for_roi(
             p_w = float(probs["wide_matrix"][wi, wj])
             key = _norm_pair(int(horse_nums[wi]), int(horse_nums[wj]))
             payout = wide_lookup.get(rid, {}).get(key, 0)
+            # NOTE: ref_w は HR レコードの結果払戻であり、事前オッズではない。
+            # 真のEV計算には OR レコード（事前ワイドオッズ）が必要。
+            # 現在の実装は参照値として使用しているが、厳密なEV評価ではない。
             ref_w = payout if payout > 0 else wide_ref
             ev = p_w * ref_w / 100.0
             if ev >= ev_threshold:
