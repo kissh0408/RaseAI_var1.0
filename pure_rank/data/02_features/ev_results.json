@@ -141,5 +141,33 @@
     "mean_abs_error": 0.0871,
     "max_abs_error": 0.1661,
     "n_bins": 10
+  },
+  "calibration_comparison": {
+    "baseline_all": {
+      "n_bets": 4775,
+      "hit_rate": 0.29026178010471204,
+      "roi": 0.8099057591623037
+    },
+    "baseline_ev": {
+      "n_bets": 4125,
+      "hit_rate": 0.17842424242424243,
+      "roi": 0.5832484848484848
+    },
+    "platt_ev": {
+      "n_bets": 3638,
+      "hit_rate": 0.07036833424958769,
+      "roi": 0.2675645959318307
+    },
+    "roi_t_ev": {
+      "T_roi": 0.3,
+      "n_bets": 4762,
+      "hit_rate": 0.2883242335153297,
+      "roi": 0.8083578328433432
+    },
+    "isotonic_ev": {
+      "n_bets": 3727,
+      "hit_rate": 0.09068956265092568,
+      "roi": 0.39559967802522134
+    }
   }
 }

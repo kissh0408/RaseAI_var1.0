@@ -26,7 +26,17 @@ from evaluate import (
     load_config,
     load_models,
 )
-from predict import _best_wide_pair, compute_race_probabilities
+from predict import (
+    _best_wide_pair,
+    _build_wide_lookup,
+    _norm_pair,
+    apply_platt_to_p_win,
+    compute_race_probabilities,
+    compute_race_probabilities_from_p_win,
+    load_calibration_models,
+    run_fit_calibration,
+    softmax_with_temperature,
+)
 
 PAIR_KEY = tuple[int, int]
 STAKE = 100.0
@@ -286,6 +296,185 @@ def simulate_ev(
     }
 
 
+def _collect_bets_with_calibration(
+    df_test: pd.DataFrame,
+    predictions: np.ndarray,
+    hr_df: pd.DataFrame,
+    T_opt: float,
+    calib: dict,
+) -> pd.DataFrame:
+    """
+    テストセット全レースについて4手法分のベット情報を1行1レースで返す。
+
+    columns:
+      race_id, hit_wide, payout_wide,           (共通)
+      p_wide_base, ev_wide_base,                (ベースライン)
+      p_wide_platt, ev_wide_platt, (pair_platt) (手法1 Platt)
+      p_wide_roi_t, ev_wide_roi_t,              (手法2 ROI-T)
+      p_wide_isotonic, ev_wide_isotonic,        (手法3 Isotonic)
+      surface_code, distance_category, weather_code
+    """
+    df = df_test.copy()
+    df["pred_score"] = predictions
+
+    wide_lookup = _build_wide_lookup(hr_df)
+    wide_ref_payout = float(hr_df[hr_df["bet_type"] == "wide"]["payout"].mean())
+
+    platt = calib.get("platt")
+    isotonic = calib.get("isotonic")
+    T_roi = float(calib.get("T_roi", T_opt))
+
+    rows: list[dict] = []
+    for race_id, grp in df.groupby("race_id"):
+        if len(grp) < 2:
+            continue
+        rid = str(race_id)
+        grp_r = grp.sort_values("pred_score", ascending=False).reset_index(drop=True)
+        horse_nums = grp_r["horse_num"].astype(int).values
+        scores = grp_r["pred_score"].values
+        n = len(scores)
+        first = grp_r.iloc[0]
+
+        # ─── ベースライン ────────────────────────────────────────────────────
+        probs_base = compute_race_probabilities(scores, T_opt)
+        wi_b, wj_b = _best_wide_pair(probs_base["wide_matrix"])
+        key_b = _norm_pair(int(horse_nums[wi_b]), int(horse_nums[wj_b]))
+        p_wide_b = float(probs_base["wide_matrix"][wi_b, wj_b])
+        payout_b = int(wide_lookup.get(rid, {}).get(key_b, 0))
+        ref_b = payout_b if payout_b > 0 else wide_ref_payout
+        ev_b = p_wide_b * ref_b / STAKE
+
+        # ─── 手法1: Platt ───────────────────────────────────────────────────
+        if platt is not None:
+            p_win_raw = softmax_with_temperature(scores, T_opt)
+            p_win_cal = apply_platt_to_p_win(p_win_raw, platt)
+            probs_p = compute_race_probabilities_from_p_win(p_win_cal)
+            wi_p, wj_p = _best_wide_pair(probs_p["wide_matrix"])
+            key_p = _norm_pair(int(horse_nums[wi_p]), int(horse_nums[wj_p]))
+            p_wide_p = float(probs_p["wide_matrix"][wi_p, wj_p])
+            payout_p = int(wide_lookup.get(rid, {}).get(key_p, 0))
+            ref_p = payout_p if payout_p > 0 else wide_ref_payout
+            ev_p = p_wide_p * ref_p / STAKE
+        else:
+            p_wide_p = ev_p = float("nan")
+            payout_p = 0
+
+        # ─── 手法2: ROI-T ───────────────────────────────────────────────────
+        probs_t = compute_race_probabilities(scores, T_roi)
+        wi_t, wj_t = _best_wide_pair(probs_t["wide_matrix"])
+        key_t = _norm_pair(int(horse_nums[wi_t]), int(horse_nums[wj_t]))
+        p_wide_t = float(probs_t["wide_matrix"][wi_t, wj_t])
+        payout_t = int(wide_lookup.get(rid, {}).get(key_t, 0))
+        ref_t = payout_t if payout_t > 0 else wide_ref_payout
+        ev_t = p_wide_t * ref_t / STAKE
+
+        # ─── 手法3: Isotonic ────────────────────────────────────────────────
+        if isotonic is not None:
+            # Harville p_wide を全ペアに Isotonic 適用してから最良ペアを選ぶ
+            wide_mat_iso = np.zeros((n, n), dtype=float)
+            for i in range(n):
+                for j in range(i + 1, n):
+                    p_w = float(probs_base["wide_matrix"][i, j])
+                    p_w_cal = float(isotonic.predict([p_w])[0])
+                    wide_mat_iso[i, j] = p_w_cal
+                    wide_mat_iso[j, i] = p_w_cal
+            wi_i, wj_i = _best_wide_pair(wide_mat_iso)
+            key_i = _norm_pair(int(horse_nums[wi_i]), int(horse_nums[wj_i]))
+            p_wide_i = float(wide_mat_iso[wi_i, wj_i])
+            payout_i = int(wide_lookup.get(rid, {}).get(key_i, 0))
+            ref_i = payout_i if payout_i > 0 else wide_ref_payout
+            ev_i = p_wide_i * ref_i / STAKE
+        else:
+            p_wide_i = ev_i = float("nan")
+            payout_i = 0
+
+        # ベースラインの hit/payout を正としてレース共通情報を記録
+        rows.append({
+            "race_id": rid,
+            # shared ground truth (ベースラインの選択ペアで判定)
+            "payout_wide": payout_b,
+            "hit_wide": int(payout_b > 0),
+            # ベースライン
+            "p_wide_base": p_wide_b,
+            "ev_wide_base": ev_b,
+            # 手法1 Platt（選択ペアが違う場合は payout も変わる）
+            "payout_platt": payout_p,
+            "hit_platt": int(payout_p > 0),
+            "p_wide_platt": p_wide_p,
+            "ev_wide_platt": ev_p,
+            # 手法2 ROI-T
+            "payout_roi_t": payout_t,
+            "hit_roi_t": int(payout_t > 0),
+            "p_wide_roi_t": p_wide_t,
+            "ev_wide_roi_t": ev_t,
+            # 手法3 Isotonic
+            "payout_isotonic": payout_i,
+            "hit_isotonic": int(payout_i > 0),
+            "p_wide_isotonic": p_wide_i,
+            "ev_wide_isotonic": ev_i,
+            # 条件
+            "surface_code": int(first["surface_code"]) if "surface_code" in grp_r.columns else -1,
+            "distance_category": first["distance_category"] if "distance_category" in grp_r.columns else -1,
+            "weather_code": int(first["weather_code"]) if "weather_code" in grp_r.columns else -1,
+        })
+
+    return pd.DataFrame(rows)
+
+
+def _roi_stats(df_bets: pd.DataFrame, ev_col: str, pay_col: str, hit_col: str, threshold: float) -> dict:
+    """EV 閾値フィルタ後の ROI 統計を計算する。"""
+    sub = df_bets[df_bets[ev_col] >= threshold]
+    n = len(sub)
+    if n == 0:
+        return {"n_bets": 0, "hit_rate": float("nan"), "roi": float("nan")}
+    hits = int(sub[hit_col].sum())
+    total_payout = float(sub[pay_col].sum())
+    return {
+        "n_bets": n,
+        "hit_rate": hits / n,
+        "roi": total_payout / (n * STAKE),
+    }
+
+
+def compare_calibration_methods(
+    df_test: pd.DataFrame,
+    predictions: np.ndarray,
+    hr_df: pd.DataFrame,
+    T_opt: float,
+    calib: dict,
+    ev_threshold: float = 1.0,
+) -> dict:
+    """
+    3手法のキャリブレーション結果をテストセットで比較する。
+
+    Returns
+    -------
+    dict: 各手法の {n_bets, hit_rate, roi} を含む比較結果
+    """
+    df_bets = _collect_bets_with_calibration(df_test, predictions, hr_df, T_opt, calib)
+    T_roi = float(calib.get("T_roi", T_opt))
+
+    # ─── ベースライン（全件）────────────────────────────────────────────────
+    n_all = len(df_bets)
+    roi_all = float(df_bets["payout_wide"].sum()) / (n_all * STAKE) if n_all > 0 else 0.0
+    hit_all = float(df_bets["hit_wide"].mean()) if n_all > 0 else 0.0
+
+    # ─── 各手法の EV フィルタ後統計 ────────────────────────────────────────
+    base_ev = _roi_stats(df_bets, "ev_wide_base", "payout_wide", "hit_wide", ev_threshold)
+    platt_ev = _roi_stats(df_bets, "ev_wide_platt", "payout_platt", "hit_platt", ev_threshold)
+    roi_t_ev = _roi_stats(df_bets, "ev_wide_roi_t", "payout_roi_t", "hit_roi_t", ev_threshold)
+    iso_ev = _roi_stats(df_bets, "ev_wide_isotonic", "payout_isotonic", "hit_isotonic", ev_threshold)
+
+    result = {
+        "baseline_all": {"n_bets": n_all, "hit_rate": hit_all, "roi": roi_all},
+        "baseline_ev": base_ev,
+        "platt_ev": platt_ev,
+        "roi_t_ev": {"T_roi": T_roi, **roi_t_ev},
+        "isotonic_ev": iso_ev,
+    }
+    return result, df_bets
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Wide/Quinella EV simulation (eval only)")
     parser.add_argument("--output", type=str, default=None, help="Output JSON path")
@@ -295,6 +484,16 @@ def main() -> None:
         nargs="+",
         default=[0.8, 0.9, 1.0, 1.05, 1.1, 1.2, 1.3, 1.5],
         help="EV threshold list for sweep",
+    )
+    parser.add_argument(
+        "--fit-calibration",
+        action="store_true",
+        help="Fit calibration models on validation set before comparison",
+    )
+    parser.add_argument(
+        "--compare-calibration",
+        action="store_true",
+        help="Output calibration method comparison table (uses saved models or fits if missing)",
     )
     args = parser.parse_args()
 
@@ -395,11 +594,11 @@ def main() -> None:
 
     # ─── キャリブレーション ───────────────────────────────────────────────────
     print(f"\n--- Calibration Check (wide) ---")
-    calib = check_calibration(df_bets, n_bins=10)
-    if calib["bins"]:
-        print(f"  mean_abs_error: {calib['mean_abs_error']:.4f}")
-        print(f"  max_abs_error : {calib['max_abs_error']:.4f}")
-        for b in calib["bins"]:
+    calib_check = check_calibration(df_bets, n_bins=10)
+    if calib_check["bins"]:
+        print(f"  mean_abs_error: {calib_check['mean_abs_error']:.4f}")
+        print(f"  max_abs_error : {calib_check['max_abs_error']:.4f}")
+        for b in calib_check["bins"]:
             print(f"  bin={b['bin']:2d} n={b['n']:5d} pred={b['predicted_prob']:.4f} actual={b['actual_hit_rate']:.4f} diff={b['diff']:+.4f}")
 
     # ─── charts/ に calibration.json を保存 ───────────────────────────────────
@@ -407,8 +606,142 @@ def main() -> None:
     charts_dir.mkdir(parents=True, exist_ok=True)
     calib_path = charts_dir / "calibration_wide.json"
     with open(calib_path, "w", encoding="utf-8") as f:
-        json.dump(calib, f, indent=2, ensure_ascii=False)
+        json.dump(calib_check, f, indent=2, ensure_ascii=False)
     print(f"\n  Calibration saved: {calib_path}")
+
+    # ─── キャリブレーション手法比較 ──────────────────────────────────────────
+    calib_comparison: dict = {}
+    if args.fit_calibration or args.compare_calibration:
+        print(f"\n{'='*60}")
+        print("=== キャリブレーション手法比較 ===")
+        print(f"{'='*60}")
+
+        if args.fit_calibration:
+            print("\n[学習] バリデーションセット（2024）でキャリブレーションモデルを学習...")
+            calib_models = run_fit_calibration(cfg)
+        else:
+            print("\n[読み込み] 保存済みキャリブレーションモデルを探索...")
+            calib_models = load_calibration_models(models_dir)
+            if not calib_models:
+                print("  保存済みモデルが見つかりません。--fit-calibration で学習してください。")
+                calib_models = {}
+
+        if calib_models:
+            T_roi = float(calib_models.get("T_roi", T_opt))
+            print(f"\n[評価] テストセット（2025+）で3手法を比較 (T_opt={T_opt}, T_roi={T_roi:.2f})...")
+            comparison, df_bets_calib = compare_calibration_methods(
+                df_test, preds, hr_df, T_opt, calib_models, ev_threshold=1.0
+            )
+
+            def _fmt_pct(v) -> str:
+                if v is None or (isinstance(v, float) and np.isnan(v)):
+                    return "N/A"
+                return f"{v * 100:.2f}%"
+
+            def _fmt_n(v) -> str:
+                if v is None:
+                    return "N/A"
+                return f"{v:,}"
+
+            print("\n{:<30} {:>6} {:>10} {:>8} {:>10}".format(
+                "method", "EV_thr", "wide_ROI", "n_bets", "hit_rate"
+            ))
+            print("-" * 70)
+            b_all = comparison["baseline_all"]
+            print("{:<30} {:>6} {:>10} {:>8} {:>10}".format(
+                "baseline_all",
+                "ALL",
+                _fmt_pct(b_all["roi"]),
+                _fmt_n(b_all["n_bets"]),
+                _fmt_pct(b_all["hit_rate"]),
+            ))
+            b_ev = comparison["baseline_ev"]
+            print("{:<30} {:>6} {:>10} {:>8} {:>10}".format(
+                "baseline_EV>=1.0",
+                "1.0",
+                _fmt_pct(b_ev["roi"]),
+                _fmt_n(b_ev["n_bets"]),
+                _fmt_pct(b_ev["hit_rate"]),
+            ))
+            p_ev = comparison["platt_ev"]
+            print("{:<30} {:>6} {:>10} {:>8} {:>10}".format(
+                "Platt_EV>=1.0",
+                "1.0",
+                _fmt_pct(p_ev["roi"]),
+                _fmt_n(p_ev["n_bets"]),
+                _fmt_pct(p_ev["hit_rate"]),
+            ))
+            t_ev = comparison["roi_t_ev"]
+            print("{:<30} {:>6} {:>10} {:>8} {:>10}".format(
+                f"ROI-T={T_roi:.2f}_EV>=1.0",
+                "1.0",
+                _fmt_pct(t_ev["roi"]),
+                _fmt_n(t_ev["n_bets"]),
+                _fmt_pct(t_ev["hit_rate"]),
+            ))
+            i_ev = comparison["isotonic_ev"]
+            print("{:<30} {:>6} {:>10} {:>8} {:>10}".format(
+                "Isotonic_EV>=1.0",
+                "1.0",
+                _fmt_pct(i_ev["roi"]),
+                _fmt_n(i_ev["n_bets"]),
+                _fmt_pct(i_ev["hit_rate"]),
+            ))
+            print("-" * 70)
+
+            # 最良手法を特定
+            candidates = {
+                "Platt": p_ev,
+                f"ROI-T={T_roi:.2f}": t_ev,
+                "Isotonic": i_ev,
+            }
+            best_name = max(
+                candidates,
+                key=lambda k: candidates[k]["roi"] if not np.isnan(candidates[k].get("roi", float("nan"))) else -1,
+            )
+            best = candidates[best_name]
+            n_total_calib = comparison["baseline_all"]["n_bets"]
+            print(f"\n[Best] {best_name}")
+            print(f"  EV>=1.0 wide ROI: {_fmt_pct(best['roi'])}")
+            print(f"  n_bets: {_fmt_n(best['n_bets'])} / {n_total_calib:,}")
+            print(f"  hit_rate: {_fmt_pct(best['hit_rate'])}")
+            roi_100 = (best.get("roi") or 0) >= 1.0
+            n_ok = (best.get("n_bets") or 0) >= 200
+            print(f"  ROI>=100%: {'Yes' if roi_100 else 'No'}")
+            print(f"  n_bets>=200: {'Yes' if n_ok else 'No'}")
+
+            calib_comparison = comparison
+
+            # calibration_comparison.json を保存
+            comp_path = charts_dir / "calibration_comparison.json"
+
+            def _safe(v):
+                if isinstance(v, float) and np.isnan(v):
+                    return None
+                if isinstance(v, (np.floating,)):
+                    return float(v)
+                if isinstance(v, (np.integer,)):
+                    return int(v)
+                return v
+
+            def _clean_dict(d: dict) -> dict:
+                return {k: _safe(v) for k, v in d.items()}
+
+            comp_json = {
+                "T_opt": T_opt,
+                "T_roi": T_roi,
+                "ev_threshold": 1.0,
+                "baseline_all": _clean_dict(comparison["baseline_all"]),
+                "baseline_ev": _clean_dict(comparison["baseline_ev"]),
+                "platt_ev": _clean_dict(comparison["platt_ev"]),
+                "roi_t_ev": _clean_dict(comparison["roi_t_ev"]),
+                "isotonic_ev": _clean_dict(comparison["isotonic_ev"]),
+                "best_method": best_name,
+            }
+            with open(comp_path, "w", encoding="utf-8") as f:
+                json.dump(comp_json, f, indent=2, ensure_ascii=False)
+                f.write("\n")
+            print(f"\n  Comparison saved: {comp_path}")
 
     # ─── ev_results.json を拡張形式で保存 ────────────────────────────────────
     def _to_json(v):
@@ -434,10 +767,11 @@ def main() -> None:
         "ev_sweep_quinella": _df_to_records(sweep_quin),
         "best_condition": best_condition,
         "calibration": {
-            "mean_abs_error": calib.get("mean_abs_error"),
-            "max_abs_error": calib.get("max_abs_error"),
-            "n_bins": len(calib.get("bins", [])),
+            "mean_abs_error": calib_check.get("mean_abs_error"),
+            "max_abs_error": calib_check.get("max_abs_error"),
+            "n_bins": len(calib_check.get("bins", [])),
         },
+        "calibration_comparison": calib_comparison if calib_comparison else None,
     }
 
     out_path = Path(args.output) if args.output else (
