@@ -8,9 +8,9 @@
   },
   "ev_filtered": {
     "threshold": 1.0,
-    "wide_n_bets": 4125,
-    "wide_hit_rate": 0.17842424242424243,
-    "wide_return_rate": 0.5832484848484848,
+    "wide_n_bets": 0,
+    "wide_hit_rate": null,
+    "wide_return_rate": null,
     "quinella_n_bets": 4380,
     "quinella_hit_rate": 0.06141552511415525,
     "quinella_return_rate": 0.4508447488584475
@@ -18,59 +18,59 @@
   "ev_sweep_wide": [
     {
       "threshold": 0.8,
-      "n_bets": 4499,
-      "hit_rate": 0.24672149366525895,
-      "return_rate": 0.7214492109357635,
-      "total_profit": -125320.0
+      "n_bets": 0,
+      "hit_rate": null,
+      "return_rate": null,
+      "total_profit": null
     },
     {
       "threshold": 0.9,
-      "n_bets": 4321,
-      "hit_rate": 0.21569081231196482,
-      "return_rate": 0.6581115482527192,
-      "total_profit": -147730.0
+      "n_bets": 0,
+      "hit_rate": null,
+      "return_rate": null,
+      "total_profit": null
     },
     {
       "threshold": 1.0,
-      "n_bets": 4125,
-      "hit_rate": 0.17842424242424243,
-      "return_rate": 0.5832484848484848,
-      "total_profit": -171910.0
+      "n_bets": 0,
+      "hit_rate": null,
+      "return_rate": null,
+      "total_profit": null
     },
     {
       "threshold": 1.05,
-      "n_bets": 4030,
-      "hit_rate": 0.15905707196029778,
-      "return_rate": 0.5414143920595533,
-      "total_profit": -184810.0
+      "n_bets": 0,
+      "hit_rate": null,
+      "return_rate": null,
+      "total_profit": null
     },
     {
       "threshold": 1.1,
-      "n_bets": 3945,
-      "hit_rate": 0.14093789607097593,
-      "return_rate": 0.5055766793409379,
-      "total_profit": -195050.0
+      "n_bets": 0,
+      "hit_rate": null,
+      "return_rate": null,
+      "total_profit": null
     },
     {
       "threshold": 1.2,
-      "n_bets": 3781,
-      "hit_rate": 0.10367627611742924,
-      "return_rate": 0.4069822798201534,
-      "total_profit": -224220.0
+      "n_bets": 0,
+      "hit_rate": null,
+      "return_rate": null,
+      "total_profit": null
     },
     {
       "threshold": 1.3,
-      "n_bets": 3646,
-      "hit_rate": 0.07103675260559517,
-      "return_rate": 0.3117388919363686,
-      "total_profit": -250940.0
+      "n_bets": 0,
+      "hit_rate": null,
+      "return_rate": null,
+      "total_profit": null
     },
     {
       "threshold": 1.5,
-      "n_bets": 3536,
-      "hit_rate": 0.04270361990950226,
-      "return_rate": 0.2150452488687783,
-      "total_profit": -277560.0
+      "n_bets": 0,
+      "hit_rate": null,
+      "return_rate": null,
+      "total_profit": null
     }
   ],
   "ev_sweep_quinella": [
@@ -131,43 +131,17 @@
       "total_profit": -336270.0
     }
   ],
-  "best_condition": {
-    "condition_type": "weather_code",
-    "condition_value": "3",
-    "n_bets": 182,
-    "return_rate": 0.7021978021978021
-  },
+  "best_condition": {},
   "calibration": {
     "mean_abs_error": 0.0871,
     "max_abs_error": 0.1661,
     "n_bins": 10
   },
-  "calibration_comparison": {
-    "baseline_all": {
-      "n_bets": 4775,
-      "hit_rate": 0.29026178010471204,
-      "roi": 0.8099057591623037
-    },
-    "baseline_ev": {
-      "n_bets": 4125,
-      "hit_rate": 0.17842424242424243,
-      "roi": 0.5832484848484848
-    },
-    "platt_ev": {
-      "n_bets": 3638,
-      "hit_rate": 0.07036833424958769,
-      "roi": 0.2675645959318307
-    },
-    "roi_t_ev": {
-      "T_roi": 0.3,
-      "n_bets": 4762,
-      "hit_rate": 0.2883242335153297,
-      "roi": 0.8083578328433432
-    },
-    "isotonic_ev": {
-      "n_bets": 3727,
-      "hit_rate": 0.09068956265092568,
-      "roi": 0.39559967802522134
-    }
+  "calibration_comparison": null,
+  "wide_odds_coverage": {
+    "n_races_total": 4775,
+    "n_races_with_odds": 4775,
+    "n_races_ev_na": 0,
+    "coverage_rate": 1.0
   }
 }
