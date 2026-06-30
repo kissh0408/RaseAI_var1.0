@@ -217,6 +217,89 @@ def check_leakage_threshold(metrics: dict) -> None:
         )
 
 
+def compute_supplementary_metrics(
+    df_test: pd.DataFrame,
+    predictions: np.ndarray,
+    T_opt: float | None = None,
+) -> dict:
+    """予測1位馬の着順分布・鼻差ミス・Top-2 coverage・ペア指標を計算する。
+
+    Parameters
+    ----------
+    df_test : テスト用 DataFrame（race_id, finish_rank, racetime を含む）
+    predictions : アンサンブル予測スコア（高いほど上位予測）
+    T_opt : Softmax 温度（None の場合は config から読み込み、未設定なら 1.0）
+
+    Returns
+    -------
+    dict:
+        pred_top1_avg_actual_rank : 予測1位馬の平均実際着順
+        near_miss_rate_narrow     : ミスのうち 2着かつタイム差≤0.3秒の割合
+        top2_coverage             : 予測1位が実際1着か2着だった割合
+        top3_coverage_rate        : 予測1位が実際1〜3着だった割合
+        wide_pair_coverage_rate   : 予測1位・2位が共に1〜3着
+        quinella_pair_coverage_rate : 予測1位・2位が{1,2}着を占める
+        wide_harville_coverage_rate : Harville最大P_wideペアが共に1〜3着
+    """
+    from predict import compute_pair_coverage_metrics
+
+    if T_opt is None:
+        cfg = load_config()
+        T_opt = cfg.get("plackett_luce", {}).get("T_opt", 1.0)
+
+    df_eval = df_test.copy()
+    df_eval["pred_score"] = predictions
+
+    pred_top1_actual_ranks: list[int] = []
+    pred_top1_time_diffs: list[float] = []
+
+    for _, grp in df_eval.groupby("race_id"):
+        pred_best_idx = grp["pred_score"].idxmax()  # 予測1位
+        actual_rank = int(grp.loc[pred_best_idx, "finish_rank"])
+        pred_top1_actual_ranks.append(actual_rank)
+
+        # 勝ち馬とのタイム差（2着以下のみ意味がある）
+        winner_rows = grp[grp["finish_rank"] == 1]
+        horse_time = float(grp.loc[pred_best_idx, "racetime"])
+        if len(winner_rows) > 0 and actual_rank > 1:
+            winner_time = float(winner_rows["racetime"].values[0])
+            pred_top1_time_diffs.append(horse_time - winner_time)
+        else:
+            # 予測1位が実際1着の場合はタイム差=0.0、勝ち馬不在は NaN
+            pred_top1_time_diffs.append(0.0 if actual_rank == 1 else float("nan"))
+
+    # 指標1: 予測1位馬の平均実際着順（小さいほど良い）
+    pred_top1_avg_rank = float(np.mean(pred_top1_actual_ranks))
+
+    # 指標2: ミスのうち 2着かつタイム差≤0.3秒の割合（鼻差ミス率）
+    misses = [
+        (r, d)
+        for r, d in zip(pred_top1_actual_ranks, pred_top1_time_diffs)
+        if r != 1
+    ]
+    if len(misses) > 0:
+        near_miss_rate_narrow = sum(
+            1 for r, d in misses
+            if r == 2 and not np.isnan(d) and d <= 0.3
+        ) / len(misses)
+    else:
+        near_miss_rate_narrow = 0.0
+
+    # 指標3: 予測1位が実際1着か2着だった割合（Top-2 coverage）
+    top2_coverage = sum(
+        1 for r in pred_top1_actual_ranks if r <= 2
+    ) / max(len(pred_top1_actual_ranks), 1)
+
+    pair_metrics = compute_pair_coverage_metrics(df_test, predictions, float(T_opt))
+
+    return {
+        "pred_top1_avg_actual_rank": pred_top1_avg_rank,
+        "near_miss_rate_narrow": near_miss_rate_narrow,
+        "top2_coverage": top2_coverage,
+        **pair_metrics,
+    }
+
+
 def print_report(metrics: dict) -> None:
     """評価結果を読みやすい形式で表示する。"""
     sep = "=" * 60
@@ -249,6 +332,38 @@ def print_report(metrics: dict) -> None:
 
     if metrics["n_races"] < 500:
         print(f"\n  [警告] テストレース数 {metrics['n_races']} < 500 — 判定保留")
+    print()
+
+
+def print_supplementary_report(sup: dict) -> None:
+    """Supplementary metrics: predicted-top1 rank distribution, near-miss, top2 coverage."""
+    sep = "-" * 60
+    print(f"{sep}")
+    print("  Supplementary metrics (pred top-1 diagnosis)")
+    print(sep)
+    print(f"  pred_top1_avg_actual_rank : {sup['pred_top1_avg_actual_rank']:.3f}")
+    print(
+        f"  top2_coverage (actual 1st or 2nd): "
+        f"{sup['top2_coverage']:.3f}  ({sup['top2_coverage']*100:.1f}%)"
+    )
+    print(
+        f"  near_miss_rate_narrow (2nd and time_diff<=0.3s / all misses): "
+        f"{sup['near_miss_rate_narrow']:.3f}  ({sup['near_miss_rate_narrow']*100:.1f}%)"
+    )
+    print(f"  top3_coverage_rate:          {sup['top3_coverage_rate']:.3f}  ({sup['top3_coverage_rate']*100:.1f}%)")
+    print(
+        f"  wide_pair_coverage_rate:     {sup['wide_pair_coverage_rate']:.3f}  "
+        f"({sup['wide_pair_coverage_rate']*100:.1f}%)"
+    )
+    print(
+        f"  quinella_pair_coverage_rate: {sup['quinella_pair_coverage_rate']:.3f}  "
+        f"({sup['quinella_pair_coverage_rate']*100:.1f}%)"
+    )
+    print(
+        f"  wide_harville_coverage_rate: {sup['wide_harville_coverage_rate']:.3f}  "
+        f"({sup['wide_harville_coverage_rate']*100:.1f}%)"
+    )
+    print(sep)
     print()
 
 
@@ -300,6 +415,11 @@ def main() -> None:
     # 結果表示
     print_report(metrics)
 
+    # 補助指標計算・表示（訓練不要）
+    print("Computing supplementary metrics...")
+    sup_metrics = compute_supplementary_metrics(df_test, preds)
+    print_supplementary_report(sup_metrics)
+
     # Phase 7 ベースラインとの比較
     baseline = {"top1_rate": 0.285, "top3_rate": None, "ndcg_at_3": 0.497, "spearman": 0.489}
     print("  Phase 7 ベースライン比較:")
@@ -316,6 +436,7 @@ def main() -> None:
         json.dump(
             {
                 "metrics": {k: float(v) for k, v in metrics.items()},
+                "supplementary": {k: float(v) for k, v in sup_metrics.items()},
                 "baseline": baseline,
                 "model_count": len(models),
             },

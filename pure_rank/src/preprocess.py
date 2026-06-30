@@ -4,7 +4,10 @@ preprocess.py — RaceAI_var1.0 前処理スクリプト
 RaceAI_var2.0.0 の前処理済み Parquet を読み込み、pure_rank 用の
 SE_preprocessed / RA_preprocessed / SK_preprocessed を生成する。
 
-市場情報（odds, popularity）は一切出力しない。
+HR（払戻）データは評価・シミュレーション専用。特徴量には merge しない。
+JV-Link 取得後: common/data/output/race_hr/race_hr_YYYY.csv を配置して
+  python pure_rank/src/preprocess.py --hr-only
+を実行する。
 """
 
 from __future__ import annotations
@@ -269,8 +272,167 @@ def preprocess_wc(wc_dir: Path, dst_parquet: Path) -> pd.DataFrame:
     return df
 
 
+def _make_race_id(row: pd.Series) -> str:
+    """year/month_day/course_code/kai/nichi/race_num から 16 桁 race_id を生成。"""
+    return (
+        str(int(row["year"])).zfill(4)
+        + str(int(row["month_day"])).zfill(4)
+        + str(int(row["course_code"])).zfill(2)
+        + str(int(row["kai"])).zfill(2)
+        + str(int(row["nichi"])).zfill(2)
+        + str(int(row["race_num"])).zfill(2)
+    )
+
+
+def _parse_kumi(kumi: str) -> tuple[int | None, int | None]:
+    """JV-Link 組番文字列（例: '0305'）を馬番2頭に分解する。"""
+    s = str(kumi).strip()
+    if not s or s == "0" * len(s) or len(s) < 4:
+        return None, None
+    h1 = int(s[:2])
+    h2 = int(s[2:4])
+    if h1 <= 0 or h2 <= 0:
+        return None, None
+    return min(h1, h2), max(h1, h2)
+
+
+def _parse_hr_records(hr_dir: Path) -> pd.DataFrame:
+    """HR CSV を long format の払戻テーブルに変換する。
+
+    出力列: race_id, bet_type, horse_num_1, horse_num_2, payout
+    payout は 100 円あたりの払戻金額（整数）。
+    """
+    import glob
+
+    files = sorted(glob.glob(str(hr_dir / "race_hr_*.csv")))
+    if not files:
+        raise FileNotFoundError(
+            f"HR CSV が見つかりません: {hr_dir / 'race_hr_*.csv'}\n"
+            "JV-Link で HR レコードを取得し common/data/output/race_hr/ に配置してください。"
+        )
+
+    quinella_cols = [
+        ("quinella_1_kumi", "quinella_1_money"),
+        ("quinella_2_kumi", "quinella_2_money"),
+        ("quinella_3_kumi", "quinella_3_money"),
+    ]
+    wide_cols = [
+        (f"wide_{i}_kumi", f"wide_{i}_money") for i in range(1, 8)
+    ]
+    win_cols = [
+        (f"win_{i}_horse", f"win_{i}_money") for i in range(1, 4)
+    ]
+
+    rows: list[dict] = []
+    for fpath in files:
+        hr = pd.read_csv(fpath, encoding="utf-8-sig", dtype=str, low_memory=False)
+        hr = hr[hr.get("record_id", "HR") == "HR"] if "record_id" in hr.columns else hr
+
+        for _, row in hr.iterrows():
+            try:
+                race_id = _make_race_id(row)
+            except (ValueError, TypeError, KeyError):
+                continue
+
+            for hcol, mcol in win_cols:
+                if hcol not in hr.columns or mcol not in hr.columns:
+                    continue
+                hraw = str(row.get(hcol, "")).strip()
+                if not hraw or hraw == "00":
+                    continue
+                try:
+                    horse = int(hraw)
+                    payout = int(str(row.get(mcol, "0")).strip() or "0")
+                except ValueError:
+                    continue
+                if horse <= 0 or payout <= 0:
+                    continue
+                rows.append({
+                    "race_id": race_id,
+                    "bet_type": "win",
+                    "horse_num_1": horse,
+                    "horse_num_2": 0,
+                    "payout": payout,
+                })
+
+            for kumi_col, money_col in quinella_cols:
+                if kumi_col not in hr.columns or money_col not in hr.columns:
+                    continue
+                h1, h2 = _parse_kumi(row.get(kumi_col, ""))
+                if h1 is None:
+                    continue
+                try:
+                    payout = int(str(row.get(money_col, "0")).strip() or "0")
+                except ValueError:
+                    continue
+                if payout <= 0:
+                    continue
+                rows.append({
+                    "race_id": race_id,
+                    "bet_type": "quinella",
+                    "horse_num_1": h1,
+                    "horse_num_2": h2,
+                    "payout": payout,
+                })
+
+            for kumi_col, money_col in wide_cols:
+                if kumi_col not in hr.columns or money_col not in hr.columns:
+                    continue
+                h1, h2 = _parse_kumi(row.get(kumi_col, ""))
+                if h1 is None:
+                    continue
+                try:
+                    payout = int(str(row.get(money_col, "0")).strip() or "0")
+                except ValueError:
+                    continue
+                if payout <= 0:
+                    continue
+                rows.append({
+                    "race_id": race_id,
+                    "bet_type": "wide",
+                    "horse_num_1": h1,
+                    "horse_num_2": h2,
+                    "payout": payout,
+                })
+
+    if not rows:
+        raise ValueError(f"HR CSV から有効な払戻レコードを抽出できませんでした: {hr_dir}")
+
+    out = pd.DataFrame(rows)
+    out["horse_num_1"] = out["horse_num_1"].astype(np.int16)
+    out["horse_num_2"] = out["horse_num_2"].astype(np.int16)
+    out["payout"] = out["payout"].astype(np.int32)
+    return out.drop_duplicates(
+        subset=["race_id", "bet_type", "horse_num_1", "horse_num_2"]
+    ).reset_index(drop=True)
+
+
+def preprocess_hr(hr_dir: Path, dst_parquet: Path) -> pd.DataFrame:
+    """HR（払戻）CSV を評価用 Parquet に変換する。特徴量には使用しない。"""
+    df = _parse_hr_records(hr_dir)
+    dst_parquet.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(dst_parquet, index=False, compression="snappy")
+    print(f"[preprocess_hr] saved: {dst_parquet} | rows={len(df):,}")
+    return df
+
+
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="pure_rank preprocessing")
+    parser.add_argument("--hr-only", action="store_true", help="HR payout preprocessing only")
+    args = parser.parse_args()
+
     cfg = load_config()
+    dst_dir = PROJECT_ROOT / cfg["data"]["preprocessed_dir"]
+
+    if args.hr_only:
+        hr_dir = Path(cfg["data"].get("hr_dir", "common/data/output/race_hr"))
+        if not hr_dir.is_absolute():
+            hr_dir = PROJECT_ROOT / hr_dir
+        preprocess_hr(hr_dir, dst_dir / "HR_preprocessed.parquet")
+        print("\n[preprocess] HR Done.")
+        return
 
     src_dir = Path(cfg["data"]["src_parquet_dir"])
     dst_dir = PROJECT_ROOT / cfg["data"]["preprocessed_dir"]

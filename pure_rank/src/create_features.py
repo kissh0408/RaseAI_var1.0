@@ -285,8 +285,15 @@ def _build_hist_features(df: pd.DataFrame) -> pd.DataFrame:
         lambda x: x.shift(1).expanding().mean()
     )
 
+    # ─── 先行傾向（running_style_code は過去走の値。shift(1) で当該レース除外） ───
+    # running_style_code: 1=逃げ, 2=先行, 3=差し, 4=追込 / 先行系 = {1, 2}
+    df["_is_front_runner"] = df["running_style_code"].isin([1, 2]).astype(np.int8)
+    df["hist_front_running_pref"] = grp_horse["_is_front_runner"].transform(
+        lambda x: x.shift(1).expanding().mean()
+    )
+
     # 一時列を削除
-    df = df.drop(columns=["_time_dev", "_is_top_grade", "_dist_bin_100", "_rank_top_grade"])
+    df = df.drop(columns=["_time_dev", "_is_top_grade", "_dist_bin_100", "_rank_top_grade", "_is_front_runner"])
     return df
 
 
@@ -823,6 +830,41 @@ def _build_speed_index_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# SECTION 5.7: RELATIVE FEATURES (within-race z-score + pace index)
+# hist_speed_idx_avg3 生成後に呼び出すこと（依存関係）。
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _field_zscore(df: pd.DataFrame, col: str, z_col: str) -> None:
+    """同レース内 z-score を in-place で追加する。"""
+    race_mean = df.groupby("race_id")[col].transform("mean")
+    race_std = df.groupby("race_id")[col].transform("std")
+    df[z_col] = (df[col] - race_mean) / (race_std + 1e-6)
+
+
+def _build_relative_features(df: pd.DataFrame) -> pd.DataFrame:
+    """レース内相対特徴量（within-race z-score + ペース指数）を生成する。"""
+    z_pairs = [
+        ("hist_last_time_dev", "field_z_time_dev"),
+        ("hist_total_prize", "field_z_prize"),
+        ("hist_last_last3f", "field_z_last3f"),
+        ("hist_win_rate", "field_z_win_rate"),
+        ("hist_speed_idx_avg3", "field_z_speed_idx"),
+        ("hist_place_rate", "field_z_place_rate"),
+    ]
+    for src, dst in z_pairs:
+        _field_zscore(df, src, dst)
+
+    df["_front_pref_filled"] = df["hist_front_running_pref"].fillna(0)
+    df["field_front_runner_density"] = df.groupby("race_id")["_front_pref_filled"].transform("mean")
+    df = df.drop(columns=["_front_pref_filled"])
+
+    df["relative_post_position"] = (
+        df["wakuban"].astype(float) / df["horse_count"].astype(float)
+    )
+    return df
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 6: TRAINING FEATURES (HC/WC)
 # 調教データは race_date より前のセッションのみを参照する（リーク防止）。
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1114,6 +1156,9 @@ def main() -> None:
 
     print("\n[5.6] Building speed index features (hist_speed_idx_*)...")
     df = _build_speed_index_features(df)
+
+    print("\n[5.7] Building relative features (field_z_*, pace index)...")
+    df = _build_relative_features(df)
 
     print("\n[6] Building training features (HC/WC)...")
     hc = _load_hc(cfg)
