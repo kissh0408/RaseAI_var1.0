@@ -31,9 +31,11 @@ from predict import (
     _best_wide_pair,
     _build_wide_lookup,
     _norm_pair,
+    apply_bracket_isotonic,
     apply_platt_to_p_win,
     compute_race_probabilities,
     compute_race_probabilities_from_p_win,
+    load_bracket_calibration,
     load_calibration_models,
     run_fit_calibration,
     softmax_with_temperature,
@@ -124,13 +126,17 @@ def _collect_bets_per_race(
     T_opt: float,
     wide_odds_lookup: dict[str, dict[PAIR_KEY, float]] | None = None,
     quinella_odds_lookup: dict[str, dict[PAIR_KEY, float]] | None = None,
+    bracket_models: dict | None = None,
 ) -> pd.DataFrame:
     """
     テストセット全レース分のベット情報を1行1レースの DataFrame として返す。
 
     ワイド EV は WideOdds 事前オッズを使った真の期待値で計算する:
-      EV_wide = P_wide x wide_odds（odds は decimal 倍率、100円ベットで odds×100円返却）
+      EV_wide = P_wide_corrected x wide_odds（bracket_models による帯別 Isotonic 補正後）
     オッズが取得できないレースは EV_wide = NaN とする。
+
+    bracket_models が指定された場合、帯別 Isotonic キャリブレーションを p_wide に適用する。
+    補正前の値は p_wide_raw / ev_wide_raw 列として保存（比較用）。
 
     馬連 EV は QuinellaOdds 事前オッズを使った真の期待値で計算する:
       EV_quin = P_quin x quinella_odds（Wide と同じ計算パターン）
@@ -171,8 +177,15 @@ def _collect_bets_per_race(
         quin_payout = int(quin_lookup.get(rid, {}).get(quin_key, 0))
 
         # ワイド: WideOdds 事前オッズによる真の EV
-        # EV = P_wide x odds（odds は decimal 倍率。/100 は不要）
+        # EV = P_wide_corrected x odds（帯別 Isotonic 補正後。/100 は不要）
         prior_odds_wide = wide_odds_lookup.get(rid, {}).get(wide_key, None)
+
+        # 帯別 Isotonic キャリブレーション適用（配線）
+        p_wide_raw = p_wide  # 補正前確率（比較用）
+        if bracket_models and prior_odds_wide is not None:
+            p_wide = apply_bracket_isotonic(p_wide, prior_odds_wide, bracket_models)
+
+        ev_wide_raw = (p_wide_raw * prior_odds_wide) if prior_odds_wide is not None else float("nan")
         ev_wide = (p_wide * prior_odds_wide) if prior_odds_wide is not None else float("nan")
 
         # 馬連: QuinellaOdds 事前オッズによる真の EV
@@ -188,9 +201,11 @@ def _collect_bets_per_race(
         first = grp.iloc[0]
         rows.append({
             "race_id": rid,
-            "p_wide": p_wide,
+            "p_wide": p_wide,          # 帯別 Isotonic 補正後確率（EV 計算に使用）
+            "p_wide_raw": p_wide_raw,  # 補正前確率（比較用）
             "p_quin": p_quin,
-            "ev_wide": ev_wide,
+            "ev_wide": ev_wide,        # 補正後 EV（主出力）
+            "ev_wide_raw": ev_wide_raw,  # 補正前 EV（比較用）
             "ev_quin": ev_quin,
             "payout_wide": wide_payout,
             "payout_quin": quin_payout,
@@ -299,25 +314,30 @@ def roi_by_condition(
 def check_calibration(
     df_bets: pd.DataFrame,
     n_bins: int = 10,
+    p_col: str = "p_wide",
 ) -> dict:
     """
-    予測勝率（p_wide）と実際の的中率のズレを計測する。
+    予測確率と実際の的中率のズレを計測する。
 
     スコアを n_bins のビンに分割し、
     predicted_prob vs actual_hit_rate を比較する。
+
+    Parameters
+    ----------
+    p_col : 予測確率列名（"p_wide" または "p_wide_raw"）
 
     Returns
     -------
     dict: bins リスト + 要約統計
     """
-    df = df_bets.copy().sort_values("p_wide")
-    df["bin"] = pd.qcut(df["p_wide"], q=n_bins, labels=False, duplicates="drop")
+    df = df_bets.copy().sort_values(p_col)
+    df["bin"] = pd.qcut(df[p_col], q=n_bins, labels=False, duplicates="drop")
 
     bins: list[dict] = []
     for b, grp in df.groupby("bin"):
         if len(grp) == 0:
             continue
-        predicted = float(grp["p_wide"].mean())
+        predicted = float(grp[p_col].mean())
         actual = float(grp["hit_wide"].mean())
         bins.append({
             "bin": int(b),
@@ -1153,11 +1173,22 @@ def main() -> None:
     models = load_models(models_dir)
     preds = ensemble_predict(models, df_test[feature_cols])
 
+    # --- 帯別 Isotonic キャリブレーションモデルのロード -------------------------
+    print(f"\nLoading bracket isotonic calibration models...")
+    bracket_models, bracket_meta = load_bracket_calibration(models_dir)
+    if bracket_models:
+        fitted_brackets = list(bracket_models.keys())
+        print(f"  Loaded bracket models: {fitted_brackets}")
+    else:
+        print(f"  [warn] No bracket models found in {models_dir}/calibration/bracket_isotonic/")
+        print(f"  Run: python pure_rank/src/predict.py --fit-bracket-calibration")
+
     print(f"\nCollecting per-race bets (T_opt={T_opt})...")
     df_bets = _collect_bets_per_race(
         df_test, preds, hr_df, T_opt,
         wide_odds_lookup=wide_odds_lookup,
         quinella_odds_lookup=quinella_odds_lookup,
+        bracket_models=bracket_models if bracket_models else None,
     )
     print(f"  Collected {len(df_bets):,} race-bets")
 
@@ -1231,9 +1262,9 @@ def main() -> None:
     else:
         best_condition = {}
 
-    # --- キャリブレーション --------------------------------------------------
-    print(f"\n--- Calibration Check (wide) ---")
-    calib_check = check_calibration(df_bets, n_bins=10)
+    # --- キャリブレーション確認（補正後・主出力）------------------------------
+    print(f"\n--- Calibration Check (wide, bracket isotonic applied) ---")
+    calib_check = check_calibration(df_bets, n_bins=10, p_col="p_wide")
     if calib_check["bins"]:
         print(f"  mean_abs_error: {calib_check['mean_abs_error']:.4f}")
         print(f"  max_abs_error : {calib_check['max_abs_error']:.4f}")
@@ -1247,6 +1278,70 @@ def main() -> None:
     with open(calib_path, "w", encoding="utf-8") as f:
         json.dump(calib_check, f, indent=2, ensure_ascii=False)
     print(f"\n  Calibration saved: {calib_path}")
+
+    # --- 帯別 Isotonic 補正前後比較 ------------------------------------------
+    bracket_calibration_comparison: dict = {}
+    if bracket_models and "p_wide_raw" in df_bets.columns:
+        print(f"\n{'='*60}")
+        print("=== 帯別 Isotonic 配線修正レポート ===")
+        print(f"{'='*60}")
+
+        # 補正前キャリブレーション誤差
+        calib_before = check_calibration(df_bets, n_bins=10, p_col="p_wide_raw")
+        mae_before = calib_before.get("mean_abs_error")
+        mae_after = calib_check.get("mean_abs_error")
+
+        # EV 閾値別の補正前後比較
+        def _ev_stats(ev_col: str, threshold: float) -> dict:
+            sub = df_bets[df_bets[ev_col] >= threshold]
+            n = len(sub)
+            if n == 0:
+                return {"n_bets": 0, "roi": float("nan")}
+            total_payout = float(sub["payout_wide"].sum())
+            return {"n_bets": n, "roi": total_payout / (n * STAKE)}
+
+        stats_10_before = _ev_stats("ev_wide_raw", 1.0)
+        stats_10_after = _ev_stats("ev_wide", 1.0)
+        stats_13_before = _ev_stats("ev_wide_raw", 1.3)
+        stats_13_after = _ev_stats("ev_wide", 1.3)
+
+        print(f"\n補正前 EV>=1.0: n={stats_10_before['n_bets']:,}, "
+              f"ROI={stats_10_before['roi']*100:.2f}%")
+        print(f"補正後 EV>=1.0: n={stats_10_after['n_bets']:,}, "
+              f"ROI={stats_10_after['roi']*100:.2f}%")
+        print(f"\n補正前 EV>=1.3: n={stats_13_before['n_bets']:,}, "
+              f"ROI={stats_13_before['roi']*100:.2f}%")
+        print(f"補正後 EV>=1.3: n={stats_13_after['n_bets']:,}, "
+              f"ROI={stats_13_after['roi']*100:.2f}%")
+
+        if mae_before is not None and mae_after is not None:
+            print(f"\nmean_abs_error: 補正前 {mae_before*100:.2f}% → 補正後 {mae_after*100:.2f}%")
+            direction = "改善" if mae_after < mae_before else "悪化"
+            print(f"キャリブレーション誤差: {direction}")
+
+        roi_10_before = stats_10_before["roi"]
+        roi_10_after = stats_10_after["roi"]
+        if not (isinstance(roi_10_before, float) and (roi_10_before != roi_10_before)) and \
+           not (isinstance(roi_10_after, float) and (roi_10_after != roi_10_after)):
+            roi_direction = "改善" if roi_10_after > roi_10_before else "改善なし"
+            print(f"\n判断: EV>=1.0 ROI が {roi_direction} "
+                  f"({roi_10_before*100:.2f}% → {roi_10_after*100:.2f}%)")
+
+        bracket_calibration_comparison = {
+            "bracket_isotonic": {
+                "mean_abs_error_before": mae_before,
+                "mean_abs_error_after": mae_after,
+                "ev_1.0_n_bets_before": stats_10_before["n_bets"],
+                "ev_1.0_n_bets_after": stats_10_after["n_bets"],
+                "ev_1.0_roi_before": round(roi_10_before, 6) if not (isinstance(roi_10_before, float) and roi_10_before != roi_10_before) else None,
+                "ev_1.0_roi_after": round(roi_10_after, 6) if not (isinstance(roi_10_after, float) and roi_10_after != roi_10_after) else None,
+                "ev_1.3_n_bets_before": stats_13_before["n_bets"],
+                "ev_1.3_n_bets_after": stats_13_after["n_bets"],
+                "ev_1.3_roi_before": round(stats_13_before["roi"], 6) if not (isinstance(stats_13_before["roi"], float) and stats_13_before["roi"] != stats_13_before["roi"]) else None,
+                "ev_1.3_roi_after": round(stats_13_after["roi"], 6) if not (isinstance(stats_13_after["roi"], float) and stats_13_after["roi"] != stats_13_after["roi"]) else None,
+                "fitted_brackets": list(bracket_models.keys()),
+            }
+        }
 
     # --- キャリブレーション手法比較 ------------------------------------------
     calib_comparison: dict = {}
@@ -1542,6 +1637,8 @@ def main() -> None:
             "n_bins": len(calib_check.get("bins", [])),
         },
         "calibration_comparison": calib_comparison if calib_comparison else None,
+        # 帯別 Isotonic 補正前後の比較（bracket_models がロードされた場合のみ）
+        "bracket_calibration_comparison": bracket_calibration_comparison if bracket_calibration_comparison else None,
         "wide_odds_coverage": wide_odds_coverage,
         "quinella_odds_coverage": quinella_odds_coverage,
         "risk_metrics": risk_metrics_json,
