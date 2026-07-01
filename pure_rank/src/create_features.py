@@ -293,7 +293,9 @@ def _build_hist_features(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # 一時列を削除
-    df = df.drop(columns=["_time_dev", "_is_top_grade", "_dist_bin_100", "_rank_top_grade", "_is_front_runner"])
+    df = df.drop(columns=[
+        "_time_dev", "_is_top_grade", "_dist_bin_100", "_rank_top_grade", "_is_front_runner",
+    ])
     return df
 
 
