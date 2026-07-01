@@ -101,6 +101,49 @@ def _build_wide_odds_lookup(
     return lookup
 
 
+def _build_quinella_odds_lookup(
+    years: list[int],
+    odds_dir: Path,
+) -> dict[str, dict[PAIR_KEY, float]]:
+    """QuinellaOdds_YYYY.csv を複数年読み込み、race_id -> {(h1,h2): odds} の辞書を返す。
+
+    Parameters
+    ----------
+    years : テストセットの年リスト
+    odds_dir : QuinellaOdds CSV が格納されたディレクトリ
+
+    Returns
+    -------
+    dict[race_id_str, dict[(h1,h2), odds]]
+        - race_id_str: str 16桁（int64 を str() 変換したもの。features_*.parquet の race_id と一致）
+        - (h1, h2): _norm_pair() で正規化（小さい馬番が先頭）
+        - odds: float（事前オッズ）
+
+    除外条件
+    --------
+    - odds_status != "ok" の行（発売前取消・発売後取消を除外）
+    - odds が NaN の行
+    - CSV ファイルが存在しない年（警告を出してスキップ）
+    """
+    lookup: dict[str, dict[PAIR_KEY, float]] = {}
+    for year in years:
+        path = odds_dir / f"QuinellaOdds_{year}.csv"
+        if not path.exists():
+            print(f"  [warn] QuinellaOdds_{year}.csv not found, skipping")
+            continue
+        df = pd.read_csv(path)
+        df = df[(df["odds_status"] == "ok") & df["odds"].notna()].copy()
+        df["race_id_str"] = df["race_id"].apply(lambda x: str(int(x)))
+        df["h_min"] = df[["horse_num_1", "horse_num_2"]].min(axis=1).astype(int)
+        df["h_max"] = df[["horse_num_1", "horse_num_2"]].max(axis=1).astype(int)
+        df["pair_key"] = list(zip(df["h_min"], df["h_max"]))
+        # 同一ペアに複数スナップショットが存在する場合は最後の値を採用
+        for rid, grp in df.groupby("race_id_str"):
+            lookup[rid] = dict(zip(grp["pair_key"], grp["odds"].astype(float)))
+    print(f"  QuinellaOdds loaded: {len(lookup):,} races across {years}")
+    return lookup
+
+
 def _best_quinella_pair(quinella_matrix: np.ndarray) -> tuple[int, int]:
     n = quinella_matrix.shape[0]
     best_i, best_j = 0, 1 if n > 1 else 0
@@ -119,6 +162,7 @@ def _collect_bets_per_race(
     hr_df: pd.DataFrame,
     T_opt: float,
     wide_odds_lookup: dict[str, dict[PAIR_KEY, float]] | None = None,
+    quinella_odds_lookup: dict[str, dict[PAIR_KEY, float]] | None = None,
 ) -> pd.DataFrame:
     """
     テストセット全レース分のベット情報を1行1レースの DataFrame として返す。
@@ -127,8 +171,9 @@ def _collect_bets_per_race(
       EV_wide = P_wide x wide_odds（odds は decimal 倍率、100円ベットで odds×100円返却）
     オッズが取得できないレースは EV_wide = NaN とする。
 
-    馬連は WideOdds CSV に含まれないため、引き続き HR 払戻平均を参照値として使用する。
-    TODO: QuinellaOdds CSV が整備された場合は同様の変更を施す。
+    馬連 EV は QuinellaOdds 事前オッズを使った真の期待値で計算する:
+      EV_quin = P_quin x quinella_odds（Wide と同じ計算パターン）
+    quinella_odds_lookup が None の場合は HR 払戻平均へのフォールバック（後方互換）。
     """
     if wide_odds_lookup is None:
         wide_odds_lookup = {}
@@ -167,9 +212,15 @@ def _collect_bets_per_race(
         prior_odds_wide = wide_odds_lookup.get(rid, {}).get(wide_key, None)
         ev_wide = (p_wide * prior_odds_wide) if prior_odds_wide is not None else float("nan")
 
-        # 馬連: HR 払戻平均を使った参照 EV（WideOdds に馬連オッズなし）
-        ref_q = quin_payout if quin_payout > 0 else quin_ref_payout
-        ev_quin = p_quin * ref_q / STAKE
+        # 馬連: QuinellaOdds 事前オッズによる真の EV
+        # EV = P_quinella × odds（Wide と同じ計算パターン）
+        if quinella_odds_lookup is not None:
+            prior_odds_quin = quinella_odds_lookup.get(rid, {}).get(quin_key, None)
+            ev_quin = (p_quin * prior_odds_quin) if prior_odds_quin is not None else float("nan")
+        else:
+            # フォールバック（quinella_odds_lookup 未提供時の後方互換）
+            ref_q = quin_payout if quin_payout > 0 else quin_ref_payout
+            ev_quin = p_quin * ref_q / STAKE
 
         first = grp.iloc[0]
         rows.append({
@@ -591,18 +642,27 @@ def main() -> None:
     print(f"\nLoading WideOdds for years: {test_years}")
     wide_odds_lookup = _build_wide_odds_lookup(test_years, odds_dir)
 
+    print(f"\nLoading QuinellaOdds for years: {test_years}")
+    quinella_odds_lookup = _build_quinella_odds_lookup(test_years, odds_dir)
+
     feature_cols = get_feature_cols(df_test, cfg)
     models = load_models(models_dir)
     preds = ensemble_predict(models, df_test[feature_cols])
 
     print(f"\nCollecting per-race bets (T_opt={T_opt})...")
-    df_bets = _collect_bets_per_race(df_test, preds, hr_df, T_opt, wide_odds_lookup)
+    df_bets = _collect_bets_per_race(
+        df_test, preds, hr_df, T_opt,
+        wide_odds_lookup=wide_odds_lookup,
+        quinella_odds_lookup=quinella_odds_lookup,
+    )
     print(f"  Collected {len(df_bets):,} race-bets")
 
     # --- EV=NaN 率の集計・報告 -----------------------------------------------
     n_ev_na = int(df_bets["ev_wide"].isna().sum())
     n_total = len(df_bets)
     print(f"  EV=NaN (no odds): {n_ev_na}/{n_total} ({n_ev_na/n_total*100:.1f}%)")
+    n_quin_ev_na = int(df_bets["ev_quin"].isna().sum())
+    print(f"  Quinella EV=NaN (no odds): {n_quin_ev_na}/{n_total} ({n_quin_ev_na/n_total*100:.1f}%)")
 
     # --- 全体統計 -------------------------------------------------------------
     n_races = len(df_bets)
@@ -840,6 +900,15 @@ def main() -> None:
         "coverage_rate": round(n_races_with_odds / n_total, 6) if n_total > 0 else 0.0,
     }
 
+    # QuinellaOdds カバレッジ統計
+    n_quin_races_with_odds = n_total - n_quin_ev_na
+    quinella_odds_coverage = {
+        "n_races_total": n_total,
+        "n_races_with_odds": n_quin_races_with_odds,
+        "n_races_ev_na": n_quin_ev_na,
+        "coverage_rate": round(n_quin_races_with_odds / n_total, 6) if n_total > 0 else 0.0,
+    }
+
     results = {
         "n_races": n_races,
         "overall": {
@@ -859,6 +928,7 @@ def main() -> None:
         },
         "calibration_comparison": calib_comparison if calib_comparison else None,
         "wide_odds_coverage": wide_odds_coverage,
+        "quinella_odds_coverage": quinella_odds_coverage,
     }
 
     out_path = Path(args.output) if args.output else (
