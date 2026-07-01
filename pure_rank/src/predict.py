@@ -762,6 +762,340 @@ def run_fit_calibration(cfg: dict | None = None) -> dict:
     return {"platt": platt, "T_roi": T_roi, "isotonic": isotonic}
 
 
+# ─── オッズ帯別 Isotonic キャリブレーション ──────────────────────────────────────
+
+WIDE_ODDS_BRACKETS: list[tuple[float, float]] = [
+    (0.0, 3.0),
+    (3.0, 8.0),
+    (8.0, 20.0),
+    (20.0, float("inf")),
+]
+
+
+def _build_wide_odds_lookup(
+    years: list[int],
+    odds_dir: Path,
+) -> dict[str, dict[tuple[int, int], float]]:
+    """
+    WideOdds_{year}.csv を複数年読み込み、race_id -> {(h1,h2): odds} を返す。
+
+    simulate_ev.py の _build_odds_lookup() と同等のロジック。
+    predict.py 内で直接利用するために定義（循環インポート回避）。
+    """
+    lookup: dict[str, dict[tuple[int, int], float]] = {}
+    for year in years:
+        path = odds_dir / f"WideOdds_{year}.csv"
+        if not path.exists():
+            print(f"  [warn] WideOdds_{year}.csv not found, skipping")
+            continue
+        df_odds = pd.read_csv(path)
+        df_odds = df_odds[(df_odds["odds_status"] == "ok") & df_odds["odds"].notna()].copy()
+        df_odds["race_id_str"] = df_odds["race_id"].apply(lambda x: str(int(x)))
+        df_odds["h_min"] = df_odds[["horse_num_1", "horse_num_2"]].min(axis=1).astype(int)
+        df_odds["h_max"] = df_odds[["horse_num_1", "horse_num_2"]].max(axis=1).astype(int)
+        df_odds["pair_key"] = list(zip(df_odds["h_min"], df_odds["h_max"]))
+        for rid, grp in df_odds.groupby("race_id_str"):
+            lookup[rid] = dict(zip(grp["pair_key"], grp["odds"].astype(float)))
+    print(f"  WideOdds loaded: {len(lookup):,} races across {years}")
+    return lookup
+
+
+def assign_odds_bracket(odds: float) -> int:
+    """
+    WideOdds の decimal multiplier からブラケット番号を返す（0-indexed）。
+
+    Parameters
+    ----------
+    odds : float（WideOdds decimal multiplier。NaN の場合は -1 を返す）
+
+    Returns
+    -------
+    int: 0〜3（-1 = 未分類 / NaN）
+    """
+    if odds != odds:  # NaN check
+        return -1
+    if odds < 3.0:
+        return 0
+    elif odds < 8.0:
+        return 1
+    elif odds < 20.0:
+        return 2
+    else:
+        return 3
+
+
+def collect_wide_pair_data_with_odds(
+    df: pd.DataFrame,
+    models: list[lgb.Booster],
+    feature_cols: list[str],
+    hr_df: pd.DataFrame,
+    wide_odds_lookup: dict[str, dict[tuple[int, int], float]],
+    T: float,
+) -> pd.DataFrame:
+    """
+    各レースの全ペア (i, j) について Harville p_wide・WideOdds・is_wide_hit を返す。
+
+    _collect_wide_pair_data() を拡張し、WideOdds ブラケット情報を追加する。
+
+    Returns
+    -------
+    pd.DataFrame:
+        p_wide_harville: float（Harville 生確率）
+        prior_odds     : float（WideOdds decimal multiplier。NaN = 未取得）
+        hit            : int（0 or 1）
+        odds_bracket   : int（0〜3、prior_odds が NaN の場合は -1）
+    """
+    wide_lookup = _build_wide_lookup(hr_df)
+    X_feat = df[feature_cols]
+    preds = ensemble_predict(models, X_feat)
+    dfc = df.copy()
+    dfc["pred_score"] = preds
+
+    rows: list[dict] = []
+    for race_id, grp in dfc.groupby("race_id"):
+        if len(grp) < 2:
+            continue
+        rid = str(race_id)
+        grp_r = grp.reset_index(drop=True)
+        horse_nums = grp_r["horse_num"].astype(int).values
+        scores = grp_r["pred_score"].values
+        probs = compute_race_probabilities(scores, float(T))
+        n = len(grp_r)
+
+        for i in range(n):
+            for j in range(i + 1, n):
+                p_w = float(probs["wide_matrix"][i, j])
+                key = _norm_pair(int(horse_nums[i]), int(horse_nums[j]))
+                payout = wide_lookup.get(rid, {}).get(key, 0)
+                prior_odds_raw = wide_odds_lookup.get(rid, {}).get(key, None)
+
+                if prior_odds_raw is not None:
+                    bracket = assign_odds_bracket(float(prior_odds_raw))
+                    prior_odds_val = float(prior_odds_raw)
+                else:
+                    bracket = -1
+                    prior_odds_val = float("nan")
+
+                rows.append({
+                    "p_wide_harville": p_w,
+                    "prior_odds": prior_odds_val,
+                    "hit": int(payout > 0),
+                    "odds_bracket": bracket,
+                })
+
+    return pd.DataFrame(rows)
+
+
+def fit_bracket_isotonic(
+    df_pairs: pd.DataFrame,
+    min_samples: int = 100,
+) -> dict[int, object]:
+    """
+    ブラケット別に Isotonic 回帰を学習する。
+
+    Parameters
+    ----------
+    df_pairs    : collect_wide_pair_data_with_odds() の出力
+    min_samples : 最小サンプル数（これを下回る帯は学習をスキップ）
+
+    Returns
+    -------
+    dict[int, IsotonicRegression]: {bracket_id: fitted_model}
+        bracket=-1 は除外。サンプル不足の帯は辞書に含まない。
+    """
+    from sklearn.isotonic import IsotonicRegression
+
+    models_dict: dict[int, object] = {}
+    for bracket in [0, 1, 2, 3]:
+        subset = df_pairs[df_pairs["odds_bracket"] == bracket]
+        n = len(subset)
+        if n < min_samples:
+            print(f"  [bracket {bracket}] samples={n} < {min_samples}, skip")
+            continue
+        X = subset["p_wide_harville"].values
+        y = subset["hit"].values
+        iso = IsotonicRegression(out_of_bounds="clip", increasing=True)
+        iso.fit(X, y)
+        models_dict[bracket] = iso
+        hit_rate = float(y.mean())
+        print(
+            f"  [bracket {bracket}] n={n:,} "
+            f"hit_rate={hit_rate:.4f} "
+            f"p_wide range=[{X.min():.4f}, {X.max():.4f}]"
+        )
+    return models_dict
+
+
+def apply_bracket_isotonic(
+    p_wide_harville: float,
+    prior_odds: float,
+    bracket_models: dict[int, object],
+) -> float:
+    """
+    ペアの Harville p_wide をブラケット別 Isotonic で補正する。
+
+    フォールバック優先順位:
+    1. 当該帯のモデルが存在 → そのモデルを使用
+    2. 帯 3 のモデルが存在しない → 帯 2 のモデルを使用
+    3. いずれも存在しない → p_wide_harville をそのまま返す
+    """
+    import math
+    if math.isnan(prior_odds):
+        return p_wide_harville
+
+    bracket = assign_odds_bracket(prior_odds)
+    if bracket == -1:
+        return p_wide_harville
+
+    model = bracket_models.get(bracket)
+    if model is None and bracket == 3:
+        model = bracket_models.get(2)  # 帯 3 フォールバック
+    if model is None:
+        return p_wide_harville
+
+    return float(model.predict([p_wide_harville])[0])
+
+
+def save_bracket_calibration(
+    models_dir: Path,
+    bracket_models: dict[int, object],
+    meta: dict,
+) -> None:
+    """
+    帯別キャリブレーションモデルを models/calibration/bracket_isotonic/ に保存する。
+
+    保存先:
+        models/calibration/bracket_isotonic/bracket_isotonic_{n}.joblib
+        models/calibration/bracket_isotonic/bracket_meta.json
+    """
+    import joblib
+
+    bracket_dir = models_dir / "calibration" / "bracket_isotonic"
+    bracket_dir.mkdir(parents=True, exist_ok=True)
+
+    for bracket_id, model in bracket_models.items():
+        p = bracket_dir / f"bracket_isotonic_{bracket_id}.joblib"
+        joblib.dump(model, p)
+        print(f"  Saved: {p}")
+
+    meta_path = bracket_dir / "bracket_meta.json"
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    print(f"  Saved: {meta_path}")
+
+
+def load_bracket_calibration(models_dir: Path) -> tuple[dict, dict]:
+    """
+    保存済み帯別キャリブレーションを読み込む。
+
+    Returns
+    -------
+    tuple[dict[int, IsotonicRegression], dict]:
+        第1要素: bracket_models
+        第2要素: meta（境界値・学習年）
+    """
+    import joblib
+
+    bracket_dir = models_dir / "calibration" / "bracket_isotonic"
+    bracket_models: dict[int, object] = {}
+    meta: dict = {}
+
+    meta_path = bracket_dir / "bracket_meta.json"
+    if meta_path.exists():
+        with open(meta_path, encoding="utf-8") as f:
+            meta = json.load(f)
+
+    for bracket_id in [0, 1, 2, 3]:
+        p = bracket_dir / f"bracket_isotonic_{bracket_id}.joblib"
+        if p.exists():
+            bracket_models[bracket_id] = joblib.load(p)
+            print(f"  Loaded: {p}")
+
+    return bracket_models, meta
+
+
+def run_fit_bracket_calibration(cfg: dict | None = None) -> dict[int, object]:
+    """
+    帯別 Isotonic キャリブレーションをバリデーション 2024 で学習し保存する。
+
+    train_config.json の calibration.fitted を True に更新する。
+
+    Returns
+    -------
+    dict[int, IsotonicRegression]: 学習済み bracket_models
+    """
+    if cfg is None:
+        cfg = load_config()
+
+    calib_cfg = cfg.get("calibration", {})
+    T_opt = float(cfg.get("plackett_luce", {}).get("T_opt", 1.0))
+    valid_year = calib_cfg.get("valid_year", "2024")
+    min_samples = calib_cfg.get("min_samples_per_bracket", 100)
+
+    version = cfg["data"]["features_version"]
+    feat_path = PROJECT_ROOT / cfg["data"]["features_dir"] / f"features_{version}.parquet"
+    hr_path = PROJECT_ROOT / cfg["data"]["preprocessed_dir"] / "HR_preprocessed.parquet"
+    models_dir = PROJECT_ROOT / cfg["data"]["models_dir"]
+    odds_dir = PROJECT_ROOT / "common" / "data" / "output" / "odds"
+
+    print(f"Loading features: {feat_path}")
+    df = pd.read_parquet(feat_path)
+    valid_start = pd.Timestamp(f"{valid_year}-01-01")
+    valid_end = pd.Timestamp(f"{valid_year}-12-31")
+    df_valid = df[(df["race_date"] >= valid_start) & (df["race_date"] <= valid_end)].copy()
+    print(f"Validation ({valid_year}): {len(df_valid):,} rows, {df_valid['race_id'].nunique():,} races")
+
+    print(f"Loading HR payouts: {hr_path}")
+    hr_all = pd.read_parquet(hr_path)
+    valid_race_ids = set(df_valid["race_id"].astype(str).unique())
+    hr_valid = hr_all[hr_all["race_id"].astype(str).isin(valid_race_ids)].copy()
+    print(f"  HR (valid): {len(hr_valid):,} rows")
+
+    print(f"\nLoading WideOdds for {valid_year}...")
+    wide_odds_lookup = _build_wide_odds_lookup([int(valid_year)], odds_dir)
+
+    feature_cols = get_feature_cols(df_valid, cfg)
+    print(f"\nLoading models from: {models_dir}")
+    models = load_models(models_dir)
+
+    print(f"\n[帯別 Isotonic] Collecting wide pair data with odds (T_opt={T_opt})...")
+    df_pairs = collect_wide_pair_data_with_odds(
+        df_valid, models, feature_cols, hr_valid, wide_odds_lookup, T_opt
+    )
+    print(f"  Total pairs: {len(df_pairs):,}")
+    for b in [0, 1, 2, 3]:
+        n_b = int((df_pairs["odds_bracket"] == b).sum())
+        n_na = int((df_pairs["odds_bracket"] == -1).sum())
+        print(f"  bracket={b}: {n_b:,} pairs")
+    print(f"  bracket=-1 (no odds): {n_na:,} pairs")
+
+    print(f"\n[帯別 Isotonic] Fitting bracket isotonic models (min_samples={min_samples})...")
+    bracket_models = fit_bracket_isotonic(df_pairs, min_samples=min_samples)
+
+    meta = {
+        "bracket_boundaries": [3.0, 8.0, 20.0],
+        "valid_year": valid_year,
+        "min_samples_per_bracket": min_samples,
+        "fitted_brackets": list(bracket_models.keys()),
+        "fitted": True,
+    }
+
+    print(f"\nSaving bracket calibration models...")
+    save_bracket_calibration(models_dir, bracket_models, meta)
+
+    # train_config.json の calibration セクションを更新
+    cfg.setdefault("calibration", {})
+    cfg["calibration"]["fitted"] = True
+    cfg["calibration"]["fitted_brackets"] = list(bracket_models.keys())
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    print(f"  Updated config: {CONFIG_PATH}")
+
+    return bracket_models
+
+
 def run_race_detail(race_id: str, cfg: dict | None = None) -> None:
     """単一レースの確率を出力する。"""
     if cfg is None:
@@ -818,9 +1152,17 @@ def main() -> None:
         action="store_true",
         help="Fit Platt/ROI-T/Isotonic calibration models on validation set (2024)",
     )
+    parser.add_argument(
+        "--fit-bracket-calibration",
+        action="store_true",
+        help="Fit bracket-specific Isotonic calibration on validation set (2024)",
+    )
     args = parser.parse_args()
 
-    if not any([args.calibrate, args.eval, args.race_id, args.fit_calibration]):
+    if not any([
+        args.calibrate, args.eval, args.race_id,
+        args.fit_calibration, args.fit_bracket_calibration,
+    ]):
         parser.print_help()
         sys.exit(1)
 
@@ -833,6 +1175,8 @@ def main() -> None:
         run_race_detail(args.race_id, cfg)
     if args.fit_calibration:
         run_fit_calibration(cfg)
+    if args.fit_bracket_calibration:
+        run_fit_bracket_calibration(cfg)
 
 
 if __name__ == "__main__":

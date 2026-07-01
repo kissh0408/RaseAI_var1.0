@@ -1,0 +1,16 @@
+{
+  "bracket_boundaries": [
+    3.0,
+    8.0,
+    20.0
+  ],
+  "valid_year": "2024",
+  "min_samples_per_bracket": 100,
+  "fitted_brackets": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "fitted": true
+}

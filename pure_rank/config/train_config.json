@@ -87,6 +87,24 @@
     ],
     "min_horse_count": 5
   },
+  "calibration": {
+    "method": "bracket_isotonic",
+    "valid_year": "2024",
+    "bracket_boundaries": [
+      3.0,
+      8.0,
+      20.0
+    ],
+    "min_samples_per_bracket": 100,
+    "fallback_bracket_for_3": 2,
+    "fitted": true,
+    "fitted_brackets": [
+      0,
+      1,
+      2,
+      3
+    ]
+  },
   "plackett_luce": {
     "T_opt": 0.76,
     "calibration_valid_year": "2024",

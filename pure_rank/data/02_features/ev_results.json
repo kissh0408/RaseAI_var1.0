@@ -154,5 +154,72 @@
     "n_races_with_odds": 4775,
     "n_races_ev_na": 0,
     "coverage_rate": 1.0
+  },
+  "risk_metrics": {
+    "wide": {
+      "ev_1.0": {
+        "fixed_stake": {
+          "n_bets": 1478,
+          "hit_rate": 0.205007,
+          "roi": 0.857172,
+          "mdd_yen": 22540.0,
+          "mdd_pct": 0.152503,
+          "sharpe_per_bet": -0.070858,
+          "total_profit_yen": -21110.0
+        },
+        "kelly_quarter": {
+          "initial_capital": 100000.0,
+          "final_balance": 998.0,
+          "n_bets": 420,
+          "hit_rate": 0.171429,
+          "mdd_yen": 99002.0,
+          "mdd_pct": 0.99002,
+          "sharpe_per_bet": -0.201509,
+          "total_profit_yen": -99002.0,
+          "final_return_pct": -0.99002,
+          "ruined": 1
+        }
+      },
+      "ev_1.3": {
+        "fixed_stake": {
+          "n_bets": 698,
+          "hit_rate": 0.154728,
+          "roi": 0.860029,
+          "mdd_yen": 10780.0,
+          "mdd_pct": 0.154441,
+          "sharpe_per_bet": -0.060221,
+          "total_profit_yen": -9770.0
+        },
+        "kelly_quarter": {
+          "initial_capital": 100000.0,
+          "final_balance": 940.0,
+          "n_bets": 253,
+          "hit_rate": 0.114625,
+          "mdd_yen": 99060.0,
+          "mdd_pct": 0.9906,
+          "sharpe_per_bet": -0.210975,
+          "total_profit_yen": -99060.0,
+          "final_return_pct": -0.9906,
+          "ruined": 1
+        }
+      }
+    }
+  },
+  "divergence_comparison": {
+    "ev_only": {
+      "n_bets": 1478,
+      "hit_rate": 0.205007,
+      "roi": 0.857172
+    },
+    "div_only": {
+      "n_bets": 4775,
+      "hit_rate": 0.011099,
+      "roi": 0.504042
+    },
+    "combined": {
+      "n_bets": 4767,
+      "hit_rate": 0.010069,
+      "roi": 0.503147
+    }
   }
 }
