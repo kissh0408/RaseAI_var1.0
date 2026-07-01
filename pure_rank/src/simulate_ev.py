@@ -44,9 +44,6 @@ from predict import (
 PAIR_KEY = tuple[int, int]
 STAKE = 100.0
 
-# 市場乖離スコア閾値スイープ用定数
-LOG_DIV_THRESHOLDS: list[float] = [-0.5, -0.3, -0.1, 0.0, 0.1, 0.2, 0.3, 0.5, 0.7, 1.0]
-
 
 def _build_hr_lookup(hr_df: pd.DataFrame, bet_type: str) -> dict[str, dict[PAIR_KEY, int]]:
     """race_id -> {(h1,h2): payout} の辞書を構築。"""
@@ -132,11 +129,8 @@ def _collect_bets_per_race(
     テストセット全レース分のベット情報を1行1レースの DataFrame として返す。
 
     ワイド EV は WideOdds 事前オッズを使った真の期待値で計算する:
-      EV_wide = P_wide_corrected x wide_odds（bracket_models による帯別 Isotonic 補正後）
+      EV_wide = p_wide x wide_odds
     オッズが取得できないレースは EV_wide = NaN とする。
-
-    bracket_models が指定された場合、帯別 Isotonic キャリブレーションを p_wide に適用する。
-    補正前の値は p_wide_raw / ev_wide_raw 列として保存（比較用）。
 
     馬連 EV は QuinellaOdds 事前オッズを使った真の期待値で計算する:
       EV_quin = P_quin x quinella_odds（Wide と同じ計算パターン）
@@ -895,220 +889,6 @@ def compute_risk_metrics(
     return result
 
 
-# ─── 市場乖離ベット戦略 ──────────────────────────────────────────────────────────
-
-def compute_race_overround(
-    race_id: str,
-    wide_odds_lookup: dict[str, dict[PAIR_KEY, float]],
-) -> float:
-    """
-    1 レースの全ペアから overround（全ペア 1/odds の合計）を計算する。
-
-    Parameters
-    ----------
-    race_id          : str 形式の race_id
-    wide_odds_lookup : _build_odds_lookup() の出力
-
-    Returns
-    -------
-    float: sum(1/odds) for all valid pairs。レース未発見の場合は 1.0 を返す。
-    """
-    pairs = wide_odds_lookup.get(race_id, {})
-    if not pairs:
-        return 1.0
-    total = sum(1.0 / v for v in pairs.values() if v > 0)
-    return max(total, 1.0)  # overround は常に >= 1.0
-
-
-def collect_divergence_bets_per_race(
-    df_test: pd.DataFrame,
-    predictions: np.ndarray,
-    hr_df: pd.DataFrame,
-    T_opt: float,
-    wide_odds_lookup: dict[str, dict[PAIR_KEY, float]],
-) -> pd.DataFrame:
-    """
-    各レースで log_divergence が最大のペアを選ぶ戦略のベット DataFrame を返す。
-
-    アルゴリズム:
-    1. 全ペアの p_model（Harville wide_matrix）を計算
-    2. レース全体の overround を計算
-    3. log_divergence = log(p_model * odds * overround) を各ペアで計算
-    4. WideOdds が取得できないペアはスキップ
-    5. argmax(log_divergence) のペアを選択
-
-    Returns
-    -------
-    pd.DataFrame:
-        race_id, horse_num_1, horse_num_2, p_model, p_implied_raw, p_implied,
-        overround, ev_raw, log_divergence, abs_divergence, odds_wide,
-        payout_wide, hit_wide, race_date, surface_code, distance_category, weather_code
-    """
-    df = df_test.copy()
-    df["pred_score"] = predictions
-
-    wide_lookup = _build_hr_lookup(hr_df, "wide")
-
-    rows: list[dict] = []
-    for race_id, grp in df.groupby("race_id"):
-        if len(grp) < 2:
-            continue
-        rid = str(race_id)
-        grp = grp.sort_values("pred_score", ascending=False).reset_index(drop=True)
-        horse_nums = grp["horse_num"].astype(int).values
-        scores = grp["pred_score"].values
-        probs = compute_race_probabilities(scores, T_opt)
-        n = len(grp)
-        first = grp.iloc[0]
-
-        overround = compute_race_overround(rid, wide_odds_lookup)
-
-        # 全ペアを走査し log_divergence 最大のペアを選ぶ
-        best_log_div = float("-inf")
-        best_info: tuple | None = None
-
-        for i in range(n):
-            for j in range(i + 1, n):
-                p_w = float(probs["wide_matrix"][i, j])
-                if p_w <= 0:
-                    continue
-                key = _norm_pair(int(horse_nums[i]), int(horse_nums[j]))
-                odds = wide_odds_lookup.get(rid, {}).get(key, None)
-                if odds is None or odds <= 0:
-                    continue
-                log_div = float(np.log(p_w * odds * overround))
-                if log_div > best_log_div:
-                    best_log_div = log_div
-                    best_info = (i, j, key, p_w, odds)
-
-        if best_info is None:
-            continue  # このレースは WideOdds 未取得
-
-        i, j, key, p_w, odds = best_info
-        payout = int(wide_lookup.get(rid, {}).get(key, 0))
-        p_implied_raw = 1.0 / odds
-        p_implied = p_implied_raw / overround
-        ev_raw = p_w * odds
-        abs_div = p_w - p_implied
-
-        rows.append({
-            "race_id": rid,
-            "horse_num_1": key[0],
-            "horse_num_2": key[1],
-            "p_model": p_w,
-            "p_implied_raw": p_implied_raw,
-            "p_implied": p_implied,
-            "overround": overround,
-            "ev_raw": ev_raw,
-            "log_divergence": best_log_div,
-            "abs_divergence": abs_div,
-            "odds_wide": odds,
-            "payout_wide": payout,
-            "hit_wide": int(payout > 0),
-            "race_date": first["race_date"] if "race_date" in grp.columns else pd.NaT,
-            "surface_code": int(first["surface_code"]) if "surface_code" in grp.columns else -1,
-            "distance_category": first["distance_category"] if "distance_category" in grp.columns else -1,
-            "weather_code": int(first["weather_code"]) if "weather_code" in grp.columns else -1,
-        })
-
-    return pd.DataFrame(rows)
-
-
-def sweep_divergence_threshold(
-    df_div_bets: pd.DataFrame,
-    thresholds: list[float],
-    div_col: str = "log_divergence",
-) -> pd.DataFrame:
-    """
-    乖離スコア閾値をスイープして ROI・的中率・ベット数を返す。
-
-    Parameters
-    ----------
-    df_div_bets : collect_divergence_bets_per_race() の出力
-    thresholds  : 閾値リスト
-    div_col     : "log_divergence" または "abs_divergence"
-
-    Returns
-    -------
-    pd.DataFrame: threshold / n_bets / hit_rate / return_rate / total_profit
-    """
-    records: list[dict] = []
-    for t in thresholds:
-        subset = df_div_bets[df_div_bets[div_col] >= t]
-        n = len(subset)
-        if n == 0:
-            records.append({
-                "threshold": t, "n_bets": 0,
-                "hit_rate": float("nan"), "return_rate": float("nan"),
-                "total_profit": float("nan"),
-            })
-            continue
-        hits = int(subset["hit_wide"].sum())
-        total_payout = float(subset["payout_wide"].sum())
-        total_stake = n * STAKE
-        records.append({
-            "threshold": t, "n_bets": n,
-            "hit_rate": hits / n,
-            "return_rate": total_payout / total_stake,
-            "total_profit": total_payout - total_stake,
-        })
-    return pd.DataFrame(records)
-
-
-def compare_ev_vs_divergence(
-    df_bets_ev: pd.DataFrame,
-    df_bets_div: pd.DataFrame,
-    ev_threshold: float = 1.0,
-    div_threshold: float = 0.0,
-) -> dict:
-    """
-    EV戦略 vs Divergence戦略 vs 複合戦略を比較する。
-
-    Parameters
-    ----------
-    df_bets_ev  : _collect_bets_per_race() の出力（argmax p_model でペア選択）
-    df_bets_div : collect_divergence_bets_per_race() の出力（argmax log_divergence）
-    ev_threshold: EV フィルタ閾値
-    div_threshold: log_divergence フィルタ閾値
-
-    Returns
-    -------
-    dict:
-        ev_only      : EV フィルタのみ（argmax p_model）
-        div_only     : divergence フィルタのみ（argmax log_divergence）
-        combined     : EV >= threshold AND log_divergence > threshold の積集合
-    """
-    def _stats(sub: pd.DataFrame, pay_col: str, hit_col: str) -> dict:
-        n = len(sub)
-        if n == 0:
-            return {"n_bets": 0, "hit_rate": None, "roi": None}
-        hits = int(sub[hit_col].sum())
-        total_payout = float(sub[pay_col].sum())
-        return {
-            "n_bets": n,
-            "hit_rate": round(hits / n, 6),
-            "roi": round(total_payout / (n * STAKE), 6),
-        }
-
-    # 戦略 A: EV のみ（argmax p_model, EV >= threshold）
-    ev_only = df_bets_ev[df_bets_ev["ev_wide"] >= ev_threshold]
-
-    # 戦略 C: divergence のみ（argmax log_divergence, log_div > div_threshold）
-    div_only = df_bets_div[df_bets_div["log_divergence"] > div_threshold]
-
-    # 戦略 D: 複合（argmax log_divergence で選択、EV >= threshold AND log_div > div_threshold）
-    combined = df_bets_div[
-        (df_bets_div["ev_raw"] >= ev_threshold) &
-        (df_bets_div["log_divergence"] > div_threshold)
-    ]
-
-    return {
-        "ev_only": _stats(ev_only, "payout_wide", "hit_wide"),
-        "div_only": _stats(div_only, "payout_wide", "hit_wide"),
-        "combined": _stats(combined, "payout_wide", "hit_wide"),
-    }
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Wide/Quinella EV simulation (eval only)")
     parser.add_argument("--output", type=str, default=None, help="Output JSON path")
@@ -1128,11 +908,6 @@ def main() -> None:
         "--compare-calibration",
         action="store_true",
         help="Output calibration method comparison table (uses saved models or fits if missing)",
-    )
-    parser.add_argument(
-        "--divergence",
-        action="store_true",
-        help="Compute market divergence betting strategy (argmax log_divergence)",
     )
     args = parser.parse_args()
 
@@ -1173,22 +948,11 @@ def main() -> None:
     models = load_models(models_dir)
     preds = ensemble_predict(models, df_test[feature_cols])
 
-    # --- 帯別 Isotonic キャリブレーションモデルのロード -------------------------
-    print(f"\nLoading bracket isotonic calibration models...")
-    bracket_models, bracket_meta = load_bracket_calibration(models_dir)
-    if bracket_models:
-        fitted_brackets = list(bracket_models.keys())
-        print(f"  Loaded bracket models: {fitted_brackets}")
-    else:
-        print(f"  [warn] No bracket models found in {models_dir}/calibration/bracket_isotonic/")
-        print(f"  Run: python pure_rank/src/predict.py --fit-bracket-calibration")
-
     print(f"\nCollecting per-race bets (T_opt={T_opt})...")
     df_bets = _collect_bets_per_race(
         df_test, preds, hr_df, T_opt,
         wide_odds_lookup=wide_odds_lookup,
         quinella_odds_lookup=quinella_odds_lookup,
-        bracket_models=bracket_models if bracket_models else None,
     )
     print(f"  Collected {len(df_bets):,} race-bets")
 
@@ -1278,70 +1042,6 @@ def main() -> None:
     with open(calib_path, "w", encoding="utf-8") as f:
         json.dump(calib_check, f, indent=2, ensure_ascii=False)
     print(f"\n  Calibration saved: {calib_path}")
-
-    # --- 帯別 Isotonic 補正前後比較 ------------------------------------------
-    bracket_calibration_comparison: dict = {}
-    if bracket_models and "p_wide_raw" in df_bets.columns:
-        print(f"\n{'='*60}")
-        print("=== 帯別 Isotonic 配線修正レポート ===")
-        print(f"{'='*60}")
-
-        # 補正前キャリブレーション誤差
-        calib_before = check_calibration(df_bets, n_bins=10, p_col="p_wide_raw")
-        mae_before = calib_before.get("mean_abs_error")
-        mae_after = calib_check.get("mean_abs_error")
-
-        # EV 閾値別の補正前後比較
-        def _ev_stats(ev_col: str, threshold: float) -> dict:
-            sub = df_bets[df_bets[ev_col] >= threshold]
-            n = len(sub)
-            if n == 0:
-                return {"n_bets": 0, "roi": float("nan")}
-            total_payout = float(sub["payout_wide"].sum())
-            return {"n_bets": n, "roi": total_payout / (n * STAKE)}
-
-        stats_10_before = _ev_stats("ev_wide_raw", 1.0)
-        stats_10_after = _ev_stats("ev_wide", 1.0)
-        stats_13_before = _ev_stats("ev_wide_raw", 1.3)
-        stats_13_after = _ev_stats("ev_wide", 1.3)
-
-        print(f"\n補正前 EV>=1.0: n={stats_10_before['n_bets']:,}, "
-              f"ROI={stats_10_before['roi']*100:.2f}%")
-        print(f"補正後 EV>=1.0: n={stats_10_after['n_bets']:,}, "
-              f"ROI={stats_10_after['roi']*100:.2f}%")
-        print(f"\n補正前 EV>=1.3: n={stats_13_before['n_bets']:,}, "
-              f"ROI={stats_13_before['roi']*100:.2f}%")
-        print(f"補正後 EV>=1.3: n={stats_13_after['n_bets']:,}, "
-              f"ROI={stats_13_after['roi']*100:.2f}%")
-
-        if mae_before is not None and mae_after is not None:
-            print(f"\nmean_abs_error: 補正前 {mae_before*100:.2f}% → 補正後 {mae_after*100:.2f}%")
-            direction = "改善" if mae_after < mae_before else "悪化"
-            print(f"キャリブレーション誤差: {direction}")
-
-        roi_10_before = stats_10_before["roi"]
-        roi_10_after = stats_10_after["roi"]
-        if not (isinstance(roi_10_before, float) and (roi_10_before != roi_10_before)) and \
-           not (isinstance(roi_10_after, float) and (roi_10_after != roi_10_after)):
-            roi_direction = "改善" if roi_10_after > roi_10_before else "改善なし"
-            print(f"\n判断: EV>=1.0 ROI が {roi_direction} "
-                  f"({roi_10_before*100:.2f}% → {roi_10_after*100:.2f}%)")
-
-        bracket_calibration_comparison = {
-            "bracket_isotonic": {
-                "mean_abs_error_before": mae_before,
-                "mean_abs_error_after": mae_after,
-                "ev_1.0_n_bets_before": stats_10_before["n_bets"],
-                "ev_1.0_n_bets_after": stats_10_after["n_bets"],
-                "ev_1.0_roi_before": round(roi_10_before, 6) if not (isinstance(roi_10_before, float) and roi_10_before != roi_10_before) else None,
-                "ev_1.0_roi_after": round(roi_10_after, 6) if not (isinstance(roi_10_after, float) and roi_10_after != roi_10_after) else None,
-                "ev_1.3_n_bets_before": stats_13_before["n_bets"],
-                "ev_1.3_n_bets_after": stats_13_after["n_bets"],
-                "ev_1.3_roi_before": round(stats_13_before["roi"], 6) if not (isinstance(stats_13_before["roi"], float) and stats_13_before["roi"] != stats_13_before["roi"]) else None,
-                "ev_1.3_roi_after": round(stats_13_after["roi"], 6) if not (isinstance(stats_13_after["roi"], float) and stats_13_after["roi"] != stats_13_after["roi"]) else None,
-                "fitted_brackets": list(bracket_models.keys()),
-            }
-        }
 
     # --- キャリブレーション手法比較 ------------------------------------------
     calib_comparison: dict = {}
@@ -1507,62 +1207,6 @@ def main() -> None:
             f"ruined={kq['ruined']}"
         )
 
-    # --- 市場乖離ベット戦略 ---------------------------------------------------
-    divergence_results: dict = {}
-    if args.divergence:
-        print(f"\n{'='*60}")
-        print("=== 市場乖離ベット戦略 ===")
-        print(f"{'='*60}")
-
-        print("\n[1] 全レースの log_divergence 最大ペアを収集...")
-        df_div_bets = collect_divergence_bets_per_race(
-            df_test, preds, hr_df, T_opt, wide_odds_lookup
-        )
-        n_div = len(df_div_bets)
-        print(f"  divergence bets: {n_div:,} races (WideOdds 取得済みのみ)")
-
-        if n_div > 0:
-            print(f"\n[2] log_divergence スイープ")
-            sweep_div = sweep_divergence_threshold(
-                df_div_bets, LOG_DIV_THRESHOLDS, div_col="log_divergence"
-            )
-            print(sweep_div.to_string(index=False))
-
-            print(f"\n[3] EV vs Divergence 戦略比較 (ev_threshold=1.0, div_threshold=0.0)")
-            comparison = compare_ev_vs_divergence(
-                df_bets, df_div_bets, ev_threshold=1.0, div_threshold=0.0
-            )
-            for strat_name, stats in comparison.items():
-                n_b = stats["n_bets"]
-                roi = stats["roi"]
-                hit = stats["hit_rate"]
-                print(
-                    f"  {strat_name:<15}: n={n_b:5d}, "
-                    f"ROI={roi*100:.2f}% " if roi is not None else f"  {strat_name:<15}: n={n_b:5d}, ROI=N/A ",
-                    end=""
-                )
-                print(f"hit={hit*100:.1f}%" if hit is not None else "hit=N/A")
-
-            # EV=1.3 でも比較
-            print(f"\n[4] EV vs Divergence 戦略比較 (ev_threshold=1.3, div_threshold=0.0)")
-            comparison_13 = compare_ev_vs_divergence(
-                df_bets, df_div_bets, ev_threshold=1.3, div_threshold=0.0
-            )
-            for strat_name, stats in comparison_13.items():
-                n_b = stats["n_bets"]
-                roi = stats["roi"]
-                hit = stats["hit_rate"]
-                roi_str = f"ROI={roi*100:.2f}%" if roi is not None else "ROI=N/A"
-                hit_str = f"hit={hit*100:.1f}%" if hit is not None else "hit=N/A"
-                print(f"  {strat_name:<15}: n={n_b:5d}, {roi_str} {hit_str}")
-
-            divergence_results = {
-                "n_races_with_odds": n_div,
-                "log_divergence_sweep": sweep_div.to_dict("records"),
-                "comparison_ev10": comparison,
-                "comparison_ev13": comparison_13,
-            }
-
     # --- ev_results.json を拡張形式で保存 ------------------------------------
     def _to_json(v):
         if isinstance(v, (np.floating, float)):
@@ -1610,15 +1254,6 @@ def main() -> None:
 
     risk_metrics_json = {"wide": _clean_risk(risk_metrics_wide)}
 
-    # divergence_comparison: ev_only/div_only/combined
-    divergence_comparison_json: dict | None = None
-    if divergence_results:
-        divergence_comparison_json = {
-            "ev_only": divergence_results.get("comparison_ev10", {}).get("ev_only"),
-            "div_only": divergence_results.get("comparison_ev10", {}).get("div_only"),
-            "combined": divergence_results.get("comparison_ev10", {}).get("combined"),
-        }
-
     results = {
         "n_races": n_races,
         "overall": {
@@ -1637,12 +1272,9 @@ def main() -> None:
             "n_bins": len(calib_check.get("bins", [])),
         },
         "calibration_comparison": calib_comparison if calib_comparison else None,
-        # 帯別 Isotonic 補正前後の比較（bracket_models がロードされた場合のみ）
-        "bracket_calibration_comparison": bracket_calibration_comparison if bracket_calibration_comparison else None,
         "wide_odds_coverage": wide_odds_coverage,
         "quinella_odds_coverage": quinella_odds_coverage,
         "risk_metrics": risk_metrics_json,
-        "divergence_comparison": divergence_comparison_json,
     }
 
     out_path = Path(args.output) if args.output else (
@@ -1652,58 +1284,6 @@ def main() -> None:
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
     print(f"\n  Results saved: {out_path}")
-
-    # divergence 結果を別ファイルにも保存
-    if divergence_results and args.divergence:
-        div_out_path = out_path.parent / "ev_results_divergence.json"
-
-        def _clean_div(v):
-            if isinstance(v, float) and np.isnan(v):
-                return None
-            if isinstance(v, (np.floating,)):
-                return float(v)
-            if isinstance(v, (np.integer,)):
-                return int(v)
-            if isinstance(v, dict):
-                return {kk: _clean_div(vv) for kk, vv in v.items()}
-            if isinstance(v, list):
-                return [_clean_div(x) for x in v]
-            return v
-
-        div_json = {
-            "divergence_strategy": {
-                "strategy_a_ev10": {
-                    "ペア選択": "argmax_p_model",
-                    **divergence_results["comparison_ev10"]["ev_only"],
-                },
-                "strategy_c_div0": {
-                    "ペア選択": "argmax_log_divergence",
-                    "log_divergence_threshold": 0.0,
-                    **divergence_results["comparison_ev10"]["div_only"],
-                },
-                "strategy_d_combined_ev10": {
-                    "ペア選択": "argmax_log_divergence",
-                    "ev_threshold": 1.0,
-                    "log_divergence_threshold": 0.0,
-                    **divergence_results["comparison_ev10"]["combined"],
-                },
-                "strategy_a_ev13": {
-                    "ペア選択": "argmax_p_model",
-                    **divergence_results["comparison_ev13"]["ev_only"],
-                },
-                "strategy_d_combined_ev13": {
-                    "ペア選択": "argmax_log_divergence",
-                    "ev_threshold": 1.3,
-                    "log_divergence_threshold": 0.0,
-                    **divergence_results["comparison_ev13"]["combined"],
-                },
-                "log_divergence_sweep": _clean_div(divergence_results["log_divergence_sweep"]),
-            }
-        }
-
-        with open(div_out_path, "w", encoding="utf-8") as f:
-            json.dump(_clean_div(div_json), f, indent=2, ensure_ascii=False)
-        print(f"  Divergence results saved: {div_out_path}")
 
 
 if __name__ == "__main__":
