@@ -24,6 +24,12 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 
+# EV 重み付き学習用: evaluate.py・predict.py・simulate_ev.py の既存関数を再利用
+# （コード重複禁止）
+from evaluate import ensemble_predict, load_models
+from predict import _best_wide_pair, compute_race_probabilities, softmax_with_temperature
+from simulate_ev import _build_wide_odds_lookup, _normalize_pair
+
 # ─── パス解決 ──────────────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 CONFIG_PATH = PROJECT_ROOT / "pure_rank" / "config" / "train_config.json"
@@ -125,6 +131,106 @@ def get_fold_split(
     return train_df, valid_df
 
 
+# ─── EV サンプル重み計算 ────────────────────────────────────────────────────────
+
+def compute_ev_weight(ev: float, k: float, max_weight: float = 2.0) -> float:
+    """EV をシグモイド関数で重みに変換する。
+
+    Parameters
+    ----------
+    ev         : 当該レースの最大 EV ペアの EV 値（NaN の場合は 1.0 を返す）
+    k          : シグモイドの急峻さパラメータ（感度分析: 5, 10, 20）
+    max_weight : 重みの上限（感度分析: 1.5, 2.0, 3.0）
+
+    Returns
+    -------
+    weight in [1.0, max_weight]
+        - EV << 1.0 → weight ≈ 1.0
+        - EV == 1.0 → weight = (1.0 + max_weight) / 2
+        - EV >> 1.0 → weight ≈ max_weight
+    """
+    if np.isnan(ev):
+        return 1.0  # EV 不明（オッズ未取得）→ デフォルト重み
+    return 1.0 + (max_weight - 1.0) / (1.0 + np.exp(-k * (ev - 1.0)))
+
+
+def compute_train_weights(
+    df: pd.DataFrame,
+    feature_cols: list[str],
+    models_dir: Path,
+    odds_dir: Path,
+    T_opt: float,
+    k: float,
+    max_weight: float,
+    cfg: dict,
+) -> np.ndarray:
+    """学習データ全行に対する EV サンプル重みを計算して返す。
+
+    2段学習プロセス:
+    1. 現行モデルで df の Wide EV を予測（Harville 確率 × WideOdds 事前オッズ）
+    2. EV に基づくシグモイド重みを計算
+    3. レース内で重みの合計 = 1 に正規化して返す
+
+    Parameters
+    ----------
+    df          : 学習プール全行（race_date <= valid_end）
+    feature_cols: 学習に使う特徴量列
+    models_dir  : 現行モデルの保存ディレクトリ
+    odds_dir    : WideOdds CSV のディレクトリ
+    T_opt       : Softmax 温度パラメータ（train_config.json から）
+    k           : シグモイド急峻さ（感度分析パラメータ）
+    max_weight  : 重みの上限（感度分析パラメータ）
+    cfg         : train_config.json の内容
+
+    Returns
+    -------
+    np.ndarray: shape = (len(df),)。df の行順と一致する。
+    """
+    print(f"  [compute_train_weights] Loading current models from {models_dir}")
+    models = load_models(models_dir)
+    preds = ensemble_predict(models, df[feature_cols])
+    df = df.copy()
+    df["pred_score"] = preds
+
+    # WideOdds CSV の読み込み（学習プールの全年）
+    train_years = sorted(df["race_date"].dt.year.unique().tolist())
+    print(f"  [compute_train_weights] Loading WideOdds for years: {train_years}")
+    wide_odds_lookup = _build_wide_odds_lookup(train_years, odds_dir)
+
+    # レースごとに best wide pair の EV を計算
+    race_ev_map: dict = {}
+    for race_id, grp in df.groupby("race_id"):
+        if len(grp) < 2:
+            race_ev_map[race_id] = float("nan")
+            continue
+        rid = str(race_id)
+        grp_s = grp.sort_values("pred_score", ascending=False).reset_index(drop=True)
+        horse_nums = grp_s["horse_num"].astype(int).values
+        scores = grp_s["pred_score"].values
+        probs = compute_race_probabilities(scores, T_opt)
+        wi, wj = _best_wide_pair(probs["wide_matrix"])
+        wide_key = _normalize_pair(int(horse_nums[wi]), int(horse_nums[wj]))
+        p_wide = float(probs["wide_matrix"][wi, wj])
+        prior = wide_odds_lookup.get(rid, {}).get(wide_key, None)
+        ev = (p_wide * prior) if prior is not None else float("nan")
+        race_ev_map[race_id] = ev
+
+    df["race_ev"] = df["race_id"].map(race_ev_map)
+
+    # シグモイド重み（行単位）
+    df["weight_raw"] = df["race_ev"].apply(lambda ev: compute_ev_weight(ev, k, max_weight))
+
+    # レース内正規化: 各レース内で重みの合計 = 1
+    race_weight_sum = df.groupby("race_id")["weight_raw"].transform("sum")
+    df["weight_norm"] = df["weight_raw"] / race_weight_sum
+
+    w_arr = df["weight_norm"].values
+    print(f"  [compute_train_weights] weight range: {w_arr.min():.4f} - {w_arr.max():.4f}")
+    nan_ev_races = int(df["race_ev"].isna().sum())
+    print(f"  [compute_train_weights] races with EV=NaN: {nan_ev_races}/{len(df)}")
+    return w_arr
+
+
 # ─── LambdaRank 学習 ───────────────────────────────────────────────────────────
 
 def train_lambdarank(
@@ -139,6 +245,7 @@ def train_lambdarank(
     params_cfg: dict,
     training_cfg: dict,
     seed: int,
+    weight_train: Optional[np.ndarray] = None,
 ) -> lgb.Booster:
     """LambdaRank モデルを学習して返す。
 
@@ -146,6 +253,7 @@ def train_lambdarank(
     ----------
     init_score は使わない（RaceAI_var2.0.0 との根本的な違い）
     categorical_feature を lgb.Dataset に必ず指定する
+    weight_train : EV サンプル重み（None = 均等重み）。group_train と同じ行順
     """
     # cat_features のうち実際に feature_cols に含まれるものだけ指定
     valid_cat = [c for c in cat_features if c in feature_cols]
@@ -170,6 +278,7 @@ def train_lambdarank(
         label=y_train,
         group=group_train,
         categorical_feature=valid_cat,
+        weight=weight_train,  # None なら均等重み（後方互換）
         free_raw_data=False,
     )
     lgb_valid = lgb.Dataset(
@@ -202,6 +311,23 @@ def main() -> None:
         "--ensemble", action="store_true",
         help="5 seeds × 3 folds の全モデルを学習する（省略時は seed=42 + fold 3 のみ）"
     )
+    parser.add_argument(
+        "--use-ev-weight",
+        action="store_true",
+        help="EV ベースのサンプル重み付きで学習する",
+    )
+    parser.add_argument(
+        "--ev-weight-k",
+        type=float,
+        default=10.0,
+        help="シグモイド重みの急峻さパラメータ（感度分析: 5, 10, 20）",
+    )
+    parser.add_argument(
+        "--ev-weight-max",
+        type=float,
+        default=2.0,
+        help="サンプル重みの上限（感度分析: 1.5, 2.0, 3.0）",
+    )
     args = parser.parse_args()
 
     cfg = load_config()
@@ -211,7 +337,16 @@ def main() -> None:
 
     version = cfg["data"]["features_version"]
     feat_path = PROJECT_ROOT / cfg["data"]["features_dir"] / f"features_{version}.parquet"
-    models_dir = PROJECT_ROOT / cfg["data"]["models_dir"]
+
+    # モデル保存先: --use-ev-weight 時は専用ディレクトリに保存（既存モデルを上書きしない）
+    if args.use_ev_weight:
+        k_label = str(int(args.ev_weight_k)) if args.ev_weight_k == int(args.ev_weight_k) else str(args.ev_weight_k)
+        max_label = str(args.ev_weight_max).replace(".", "")
+        models_dir = PROJECT_ROOT / f"pure_rank/models_weighted_k{k_label}_max{max_label}"
+        print(f"  EV weighted mode: k={args.ev_weight_k}, max_weight={args.ev_weight_max}")
+        print(f"  Models will be saved to: {models_dir}")
+    else:
+        models_dir = PROJECT_ROOT / cfg["data"]["models_dir"]
     models_dir.mkdir(parents=True, exist_ok=True)
 
     # データ読み込み
@@ -242,6 +377,29 @@ def main() -> None:
     print(f"\nTraining: seeds={seeds}, folds={folds}")
     print(f"Total models: {len(seeds) * len(folds)}")
 
+    # EV 重み付き学習: 学習プール全行に対して重みを事前計算
+    weight_series: Optional[pd.Series] = None
+    if args.use_ev_weight:
+        T_opt = float(cfg.get("plackett_luce", {}).get("T_opt", 1.0))
+        odds_dir = PROJECT_ROOT / "common" / "data" / "output" / "odds"
+        # 均等重みモデル（既存の pure_rank/models/）で EV を予測するため、
+        # models_dir を一時的に既存モデルディレクトリに向ける
+        existing_models_dir = PROJECT_ROOT / cfg["data"]["models_dir"]
+        print(f"\nComputing EV-based sample weights (k={args.ev_weight_k}, max_weight={args.ev_weight_max})...")
+        weight_array = compute_train_weights(
+            df=df_train_pool,
+            feature_cols=feature_cols,
+            models_dir=existing_models_dir,
+            odds_dir=odds_dir,
+            T_opt=T_opt,
+            k=args.ev_weight_k,
+            max_weight=args.ev_weight_max,
+            cfg=cfg,
+        )
+        print(f"  EV weight range: {weight_array.min():.4f} - {weight_array.max():.4f}")
+        # pandas Series でインデックス対応付け（fold 分割後の行選択に使う）
+        weight_series = pd.Series(weight_array, index=df_train_pool.index)
+
     trained_models = []
     for seed in seeds:
         for fold in folds:
@@ -267,6 +425,12 @@ def main() -> None:
             group_train = get_group_sizes(train_df)
             group_valid = get_group_sizes(valid_df)
 
+            # fold ごとに train_df のインデックスに対応する重みを選択
+            # weight_series は df_train_pool と同じインデックスを持つ
+            fold_weight_train: Optional[np.ndarray] = None
+            if weight_series is not None:
+                fold_weight_train = weight_series.loc[train_df.index].values
+
             model = train_lambdarank(
                 X_train=train_df,
                 y_train=y_train,
@@ -279,6 +443,7 @@ def main() -> None:
                 params_cfg=params_cfg,
                 training_cfg=training_cfg,
                 seed=seed,
+                weight_train=fold_weight_train,
             )
 
             model.save_model(str(model_path))

@@ -104,5 +104,14 @@
       1.5
     ],
     "T_search_fine_step": 0.02
+  },
+  "sample_weighting": {
+    "enabled": false,
+    "k": 10,
+    "k_candidates": [5, 10, 20],
+    "max_weight": 2.0,
+    "max_weight_candidates": [1.5, 2.0, 3.0],
+    "weight_range_note": "sigmoid output range = [1.0, max_weight]",
+    "models_dir_template": "pure_rank/models_weighted_k{k}_max{max_weight}"
   }
 }

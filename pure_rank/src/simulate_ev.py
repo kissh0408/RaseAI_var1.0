@@ -36,6 +36,48 @@ def _normalize_pair(h1: int, h2: int) -> PAIR_KEY:
     return (min(h1, h2), max(h1, h2))
 
 
+def _build_wide_odds_lookup(
+    years: list[int],
+    odds_dir: Path,
+) -> dict[str, dict[PAIR_KEY, float]]:
+    """WideOdds_YYYY.csv を複数年読み込み、race_id -> {(h1,h2): odds} の辞書を返す。
+
+    Parameters
+    ----------
+    years : 対象年リスト
+    odds_dir : WideOdds CSV が格納されたディレクトリ
+
+    Returns
+    -------
+    dict[race_id_str, dict[(h1,h2), odds]]
+        - race_id_str: str 16桁（int64 を str() 変換したもの）
+        - (h1, h2): _normalize_pair() で正規化（小さい馬番が先頭）
+        - odds: float（事前オッズ）
+
+    除外条件
+    --------
+    - odds_status != "ok" の行
+    - odds が NaN の行
+    - CSV ファイルが存在しない年（警告を出してスキップ）
+    """
+    lookup: dict[str, dict[PAIR_KEY, float]] = {}
+    for year in years:
+        path = odds_dir / f"WideOdds_{year}.csv"
+        if not path.exists():
+            print(f"  [warn] WideOdds_{year}.csv not found, skipping")
+            continue
+        df = pd.read_csv(path)
+        df = df[(df["odds_status"] == "ok") & df["odds"].notna()].copy()
+        df["race_id_str"] = df["race_id"].apply(lambda x: str(int(x)))
+        df["h_min"] = df[["horse_num_1", "horse_num_2"]].min(axis=1).astype(int)
+        df["h_max"] = df[["horse_num_1", "horse_num_2"]].max(axis=1).astype(int)
+        df["pair_key"] = list(zip(df["h_min"], df["h_max"]))
+        for rid, grp in df.groupby("race_id_str"):
+            lookup[rid] = dict(zip(grp["pair_key"], grp["odds"].astype(float)))
+    print(f"  WideOdds loaded: {len(lookup):,} races across {years}")
+    return lookup
+
+
 def _build_hr_lookup(hr_df: pd.DataFrame, bet_type: str) -> dict[str, dict[PAIR_KEY, int]]:
     """race_id -> {(h1,h2): payout} の辞書を構築。"""
     sub = hr_df[hr_df["bet_type"] == bet_type]
@@ -64,23 +106,25 @@ def _collect_bets_per_race(
     predictions: np.ndarray,
     hr_df: pd.DataFrame,
     T_opt: float,
+    wide_odds_lookup: dict[str, dict[PAIR_KEY, float]] | None = None,
 ) -> pd.DataFrame:
     """
     テストセット全レース分のベット情報を1行1レースの DataFrame として返す。
 
-    EV は事後計算:
-      - 的中レース: EV = p_predicted * actual_payout / 100
-      - 外れレース: EV = p_predicted * avg_ref_payout / 100
-        (avg_ref_payout は HR 全払戻の平均; 事前オッズの代替)
+    ワイド EV は WideOdds 事前オッズを使った真の期待値で計算する:
+      EV_wide = P_wide x wide_odds（wide_odds_lookup が None なら HR 払戻フォールバック）
+    オッズが取得できないレースは EV_wide = NaN とする。
     """
+    if wide_odds_lookup is None:
+        wide_odds_lookup = {}
+
     df = df_test.copy()
     df["pred_score"] = predictions
 
-    wide_lookup = _build_hr_lookup(hr_df, "wide")
+    wide_hr_lookup = _build_hr_lookup(hr_df, "wide")
     quin_lookup = _build_hr_lookup(hr_df, "quinella")
 
-    # 参照払戻 = HR データ内の平均的中払戻（事前オッズの代替として使用）
-    wide_ref_payout = float(hr_df[hr_df["bet_type"] == "wide"]["payout"].mean())
+    # HR フォールバック用
     quin_ref_payout = float(hr_df[hr_df["bet_type"] == "quinella"]["payout"].mean())
 
     rows: list[dict] = []
@@ -100,13 +144,15 @@ def _collect_bets_per_race(
         p_wide = float(probs["wide_matrix"][wi, wj])
         p_quin = float(probs["quinella_matrix"][qi, qj])
 
-        wide_payout = int(wide_lookup.get(rid, {}).get(wide_key, 0))
+        wide_payout = int(wide_hr_lookup.get(rid, {}).get(wide_key, 0))
         quin_payout = int(quin_lookup.get(rid, {}).get(quin_key, 0))
 
-        # EV: 的中時は実払戻、外れ時は平均参照払戻を使用
-        ref_w = wide_payout if wide_payout > 0 else wide_ref_payout
+        # ワイド: WideOdds 事前オッズによる真の EV（取得できない場合は NaN）
+        prior_odds_wide = wide_odds_lookup.get(rid, {}).get(wide_key, None)
+        ev_wide = (p_wide * prior_odds_wide) if prior_odds_wide is not None else float("nan")
+
+        # 馬連: HR 払戻フォールバック
         ref_q = quin_payout if quin_payout > 0 else quin_ref_payout
-        ev_wide = p_wide * ref_w / STAKE
         ev_quin = p_quin * ref_q / STAKE
 
         first = grp.iloc[0]
@@ -296,6 +342,12 @@ def main() -> None:
         default=[0.8, 0.9, 1.0, 1.05, 1.1, 1.2, 1.3, 1.5],
         help="EV threshold list for sweep",
     )
+    parser.add_argument(
+        "--models-dir",
+        type=str,
+        default=None,
+        help="モデルディレクトリのパス（省略時は train_config.json の models_dir を使用）",
+    )
     args = parser.parse_args()
 
     cfg = load_config()
@@ -304,7 +356,10 @@ def main() -> None:
     version = cfg["data"]["features_version"]
     feat_path = PROJECT_ROOT / cfg["data"]["features_dir"] / f"features_{version}.parquet"
     hr_path = PROJECT_ROOT / cfg["data"]["preprocessed_dir"] / "HR_preprocessed.parquet"
-    models_dir = PROJECT_ROOT / cfg["data"]["models_dir"]
+    if args.models_dir:
+        models_dir = PROJECT_ROOT / args.models_dir
+    else:
+        models_dir = PROJECT_ROOT / cfg["data"]["models_dir"]
 
     if not hr_path.exists():
         raise FileNotFoundError(
@@ -322,13 +377,24 @@ def main() -> None:
     hr_df = pd.read_parquet(hr_path)
     print(f"  HR rows: {len(hr_df):,}")
 
+    # --- WideOdds 事前オッズの読み込み
+    test_years = sorted(df_test["race_date"].dt.year.unique().tolist())
+    odds_dir = PROJECT_ROOT / "common" / "data" / "output" / "odds"
+    print(f"\nLoading WideOdds for years: {test_years}")
+    wide_odds_lookup = _build_wide_odds_lookup(test_years, odds_dir)
+
     feature_cols = get_feature_cols(df_test, cfg)
     models = load_models(models_dir)
     preds = ensemble_predict(models, df_test[feature_cols])
 
     print(f"\nCollecting per-race bets (T_opt={T_opt})...")
-    df_bets = _collect_bets_per_race(df_test, preds, hr_df, T_opt)
+    df_bets = _collect_bets_per_race(df_test, preds, hr_df, T_opt, wide_odds_lookup)
     print(f"  Collected {len(df_bets):,} race-bets")
+
+    # --- EV=NaN 率の集計・報告
+    n_ev_na = int(df_bets["ev_wide"].isna().sum())
+    n_total = len(df_bets)
+    print(f"  EV=NaN (no odds): {n_ev_na}/{n_total} ({n_ev_na/n_total*100:.1f}%)")
 
     # ─── 全体統計 ─────────────────────────────────────────────────────────────
     n_races = len(df_bets)

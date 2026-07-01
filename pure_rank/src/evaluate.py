@@ -368,11 +368,24 @@ def print_supplementary_report(sup: dict) -> None:
 
 
 def main() -> None:
+    import argparse
+    parser = argparse.ArgumentParser(description="RaceAI_var1.0 Evaluation")
+    parser.add_argument(
+        "--models-dir",
+        type=str,
+        default=None,
+        help="モデルディレクトリのパス（省略時は train_config.json の models_dir を使用）",
+    )
+    args = parser.parse_args()
+
     cfg = load_config()
 
     version = cfg["data"]["features_version"]
     feat_path = PROJECT_ROOT / cfg["data"]["features_dir"] / f"features_{version}.parquet"
-    models_dir = PROJECT_ROOT / cfg["data"]["models_dir"]
+    if args.models_dir:
+        models_dir = PROJECT_ROOT / args.models_dir
+    else:
+        models_dir = PROJECT_ROOT / cfg["data"]["models_dir"]
 
     print(f"Loading features: {feat_path}")
     df = pd.read_parquet(feat_path)
