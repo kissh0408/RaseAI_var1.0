@@ -1,0 +1,111 @@
+{
+  "divergence_strategy": {
+    "strategy_a_ev10": {
+      "ペア選択": "argmax_p_model",
+      "n_bets": 1478,
+      "hit_rate": 0.205007,
+      "roi": 0.857172
+    },
+    "strategy_c_div0": {
+      "ペア選択": "argmax_log_divergence",
+      "log_divergence_threshold": 0.0,
+      "n_bets": 4775,
+      "hit_rate": 0.011099,
+      "roi": 0.504042
+    },
+    "strategy_d_combined_ev10": {
+      "ペア選択": "argmax_log_divergence",
+      "ev_threshold": 1.0,
+      "log_divergence_threshold": 0.0,
+      "n_bets": 4767,
+      "hit_rate": 0.010069,
+      "roi": 0.503147
+    },
+    "strategy_a_ev13": {
+      "ペア選択": "argmax_p_model",
+      "n_bets": 698,
+      "hit_rate": 0.154728,
+      "roi": 0.860029
+    },
+    "strategy_d_combined_ev13": {
+      "ペア選択": "argmax_log_divergence",
+      "ev_threshold": 1.3,
+      "log_divergence_threshold": 0.0,
+      "n_bets": 4730,
+      "hit_rate": 0.008879,
+      "roi": 0.499514
+    },
+    "log_divergence_sweep": [
+      {
+        "threshold": -0.5,
+        "n_bets": 4775,
+        "hit_rate": 0.011099476439790576,
+        "return_rate": 0.5040418848167539,
+        "total_profit": -236820.0
+      },
+      {
+        "threshold": -0.3,
+        "n_bets": 4775,
+        "hit_rate": 0.011099476439790576,
+        "return_rate": 0.5040418848167539,
+        "total_profit": -236820.0
+      },
+      {
+        "threshold": -0.1,
+        "n_bets": 4775,
+        "hit_rate": 0.011099476439790576,
+        "return_rate": 0.5040418848167539,
+        "total_profit": -236820.0
+      },
+      {
+        "threshold": 0.0,
+        "n_bets": 4775,
+        "hit_rate": 0.011099476439790576,
+        "return_rate": 0.5040418848167539,
+        "total_profit": -236820.0
+      },
+      {
+        "threshold": 0.1,
+        "n_bets": 4775,
+        "hit_rate": 0.011099476439790576,
+        "return_rate": 0.5040418848167539,
+        "total_profit": -236820.0
+      },
+      {
+        "threshold": 0.2,
+        "n_bets": 4775,
+        "hit_rate": 0.011099476439790576,
+        "return_rate": 0.5040418848167539,
+        "total_profit": -236820.0
+      },
+      {
+        "threshold": 0.3,
+        "n_bets": 4775,
+        "hit_rate": 0.011099476439790576,
+        "return_rate": 0.5040418848167539,
+        "total_profit": -236820.0
+      },
+      {
+        "threshold": 0.5,
+        "n_bets": 4775,
+        "hit_rate": 0.011099476439790576,
+        "return_rate": 0.5040418848167539,
+        "total_profit": -236820.0
+      },
+      {
+        "threshold": 0.7,
+        "n_bets": 4775,
+        "hit_rate": 0.011099476439790576,
+        "return_rate": 0.5040418848167539,
+        "total_profit": -236820.0
+      },
+      {
+        "threshold": 1.0,
+        "n_bets": 4775,
+        "hit_rate": 0.011099476439790576,
+        "return_rate": 0.5040418848167539,
+        "total_profit": -236820.0
+      }
+    ]
+  }
+}

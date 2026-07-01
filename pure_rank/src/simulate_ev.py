@@ -31,9 +31,11 @@ from predict import (
     _best_wide_pair,
     _build_wide_lookup,
     _norm_pair,
+    apply_bracket_isotonic,
     apply_platt_to_p_win,
     compute_race_probabilities,
     compute_race_probabilities_from_p_win,
+    load_bracket_calibration,
     load_calibration_models,
     run_fit_calibration,
     softmax_with_temperature,
@@ -121,12 +123,13 @@ def _collect_bets_per_race(
     T_opt: float,
     wide_odds_lookup: dict[str, dict[PAIR_KEY, float]] | None = None,
     quinella_odds_lookup: dict[str, dict[PAIR_KEY, float]] | None = None,
+    bracket_models: dict | None = None,
 ) -> pd.DataFrame:
     """
     テストセット全レース分のベット情報を1行1レースの DataFrame として返す。
 
     ワイド EV は WideOdds 事前オッズを使った真の期待値で計算する:
-      EV_wide = P_wide x wide_odds（odds は decimal 倍率、100円ベットで odds×100円返却）
+      EV_wide = p_wide x wide_odds
     オッズが取得できないレースは EV_wide = NaN とする。
 
     馬連 EV は QuinellaOdds 事前オッズを使った真の期待値で計算する:
@@ -168,8 +171,15 @@ def _collect_bets_per_race(
         quin_payout = int(quin_lookup.get(rid, {}).get(quin_key, 0))
 
         # ワイド: WideOdds 事前オッズによる真の EV
-        # EV = P_wide x odds（odds は decimal 倍率。/100 は不要）
+        # EV = P_wide_corrected x odds（帯別 Isotonic 補正後。/100 は不要）
         prior_odds_wide = wide_odds_lookup.get(rid, {}).get(wide_key, None)
+
+        # 帯別 Isotonic キャリブレーション適用（配線）
+        p_wide_raw = p_wide  # 補正前確率（比較用）
+        if bracket_models and prior_odds_wide is not None:
+            p_wide = apply_bracket_isotonic(p_wide, prior_odds_wide, bracket_models)
+
+        ev_wide_raw = (p_wide_raw * prior_odds_wide) if prior_odds_wide is not None else float("nan")
         ev_wide = (p_wide * prior_odds_wide) if prior_odds_wide is not None else float("nan")
 
         # 馬連: QuinellaOdds 事前オッズによる真の EV
@@ -185,9 +195,11 @@ def _collect_bets_per_race(
         first = grp.iloc[0]
         rows.append({
             "race_id": rid,
-            "p_wide": p_wide,
+            "p_wide": p_wide,          # 帯別 Isotonic 補正後確率（EV 計算に使用）
+            "p_wide_raw": p_wide_raw,  # 補正前確率（比較用）
             "p_quin": p_quin,
-            "ev_wide": ev_wide,
+            "ev_wide": ev_wide,        # 補正後 EV（主出力）
+            "ev_wide_raw": ev_wide_raw,  # 補正前 EV（比較用）
             "ev_quin": ev_quin,
             "payout_wide": wide_payout,
             "payout_quin": quin_payout,
@@ -196,6 +208,8 @@ def _collect_bets_per_race(
             "surface_code": int(first["surface_code"]) if "surface_code" in grp.columns else -1,
             "distance_category": first["distance_category"] if "distance_category" in grp.columns else -1,
             "weather_code": int(first["weather_code"]) if "weather_code" in grp.columns else -1,
+            # 時系列順 MDD 計算のため race_date を追加
+            "race_date": first["race_date"] if "race_date" in grp.columns else pd.NaT,
         })
 
     return pd.DataFrame(rows)
@@ -294,25 +308,30 @@ def roi_by_condition(
 def check_calibration(
     df_bets: pd.DataFrame,
     n_bins: int = 10,
+    p_col: str = "p_wide",
 ) -> dict:
     """
-    予測勝率（p_wide）と実際の的中率のズレを計測する。
+    予測確率と実際の的中率のズレを計測する。
 
     スコアを n_bins のビンに分割し、
     predicted_prob vs actual_hit_rate を比較する。
+
+    Parameters
+    ----------
+    p_col : 予測確率列名（"p_wide" または "p_wide_raw"）
 
     Returns
     -------
     dict: bins リスト + 要約統計
     """
-    df = df_bets.copy().sort_values("p_wide")
-    df["bin"] = pd.qcut(df["p_wide"], q=n_bins, labels=False, duplicates="drop")
+    df = df_bets.copy().sort_values(p_col)
+    df["bin"] = pd.qcut(df[p_col], q=n_bins, labels=False, duplicates="drop")
 
     bins: list[dict] = []
     for b, grp in df.groupby("bin"):
         if len(grp) == 0:
             continue
-        predicted = float(grp["p_wide"].mean())
+        predicted = float(grp[p_col].mean())
         actual = float(grp["hit_wide"].mean())
         bins.append({
             "bin": int(b),
@@ -550,6 +569,326 @@ def compare_calibration_methods(
     return result, df_bets
 
 
+# ─── リスク調整評価指標 ─────────────────────────────────────────────────────────
+
+def compute_max_drawdown(pnl_series: np.ndarray) -> tuple[float, float]:
+    """
+    累積 P&L 時系列からピーク比最大ドローダウンを計算する。
+
+    Parameters
+    ----------
+    pnl_series : 各ベットの P&L 配列（時系列順）
+
+    Returns
+    -------
+    tuple[float, float]: (mdd_yen, mdd_pct)
+        mdd_yen : 最大ドローダウン（円）、常に >= 0
+        mdd_pct : mdd_yen / 累積最大値（ピーク比率）
+    """
+    arr = np.asarray(pnl_series, dtype=float)
+    if len(arr) == 0:
+        return 0.0, 0.0
+    cumulative = np.cumsum(arr)
+    running_max = np.maximum.accumulate(cumulative)
+    drawdown = running_max - cumulative
+    mdd_yen = float(drawdown.max())
+    max_peak = float(running_max.max())
+    # ピークがゼロ以下（全損失系列）の場合は絶対値を基準にする
+    mdd_pct = mdd_yen / max(max_peak, 1.0) if max_peak > 0 else 0.0
+    return mdd_yen, mdd_pct
+
+
+def compute_sharpe_ratio(returns: np.ndarray, risk_free: float = 0.0) -> float:
+    """
+    ベット単位収益率のシャープレシオを計算する。
+
+    Parameters
+    ----------
+    returns  : 各ベットの収益率配列（hit: (payout-100)/100, miss: -1.0）
+    risk_free: リスクフリーレート（デフォルト 0.0）
+
+    Returns
+    -------
+    float: mean(returns - risk_free) / std(returns)
+           std が 0 または サンプルが 1 件以下の場合は nan を返す
+    """
+    r = np.asarray(returns, dtype=float)
+    if len(r) <= 1:
+        return float("nan")
+    std = float(np.std(r, ddof=1))
+    if std < 1e-12:
+        return float("nan")
+    return float((np.mean(r) - risk_free) / std)
+
+
+def compute_kelly_fractions(
+    df_bets: pd.DataFrame,
+    fraction: float = 0.25,
+    ev_col: str = "ev_wide",
+    p_col: str = "p_wide",
+) -> pd.Series:
+    """
+    df_bets の各行に fraction Kelly ベット分率を計算して返す。
+
+    計算式:
+        prior_odds = ev / p_wide
+        b = prior_odds - 1  （net odds）
+        f_full = max(p - (1-p)/b, 0)
+        f_quarter = f_full * fraction
+
+    EV <= 1.0 または p <= 0 または prior_odds <= 1.0 の行は 0.0 を返す。
+    """
+    ev = df_bets[ev_col].values.astype(float)
+    p = df_bets[p_col].values.astype(float)
+    result = np.zeros(len(df_bets), dtype=float)
+
+    for idx in range(len(df_bets)):
+        ev_i = ev[idx]
+        p_i = p[idx]
+        if np.isnan(ev_i) or np.isnan(p_i) or p_i <= 0 or ev_i <= 1.0:
+            continue
+        prior_odds = ev_i / p_i
+        if prior_odds <= 1.0:
+            continue
+        b = prior_odds - 1.0
+        f_full = max((p_i - (1.0 - p_i) / b), 0.0)
+        result[idx] = f_full * fraction
+
+    return pd.Series(result, index=df_bets.index)
+
+
+def simulate_kelly_quarter(
+    df_bets: pd.DataFrame,
+    initial_bankroll: float = 100_000.0,
+    fraction: float = 0.25,
+    ev_threshold: float = 1.0,
+    ev_col: str = "ev_wide",
+    pay_col: str = "payout_wide",
+    hit_col: str = "hit_wide",
+    p_col: str = "p_wide",
+    min_bet: float = 10.0,
+    ruin_threshold: float = 1_000.0,
+) -> dict:
+    """
+    時系列順に 1/4 Kelly でベットし、シミュレーション結果を返す。
+
+    Parameters
+    ----------
+    df_bets         : _collect_bets_per_race() の出力（race_date カラム推奨）
+    initial_bankroll: 初期資金（円）
+    fraction        : Kelly 分率（0.25 = 1/4 Kelly）
+    ev_threshold    : ベット条件（EV >= この値のみ）
+    min_bet         : 最小ベット額（円）
+    ruin_threshold  : 残高がこれを下回ったらシミュレーション終了
+
+    Returns
+    -------
+    dict:
+        initial_capital, final_balance, total_profit_yen, final_return_pct,
+        n_bets, hit_rate, mdd_yen, mdd_pct, sharpe_per_bet, ruined, balance_series
+    """
+    sub = df_bets[df_bets[ev_col] >= ev_threshold].copy()
+    if "race_date" in sub.columns:
+        sub = sub.sort_values("race_date").reset_index(drop=True)
+
+    balance = float(initial_bankroll)
+    balance_series: list[float] = [balance]
+    pnl_list: list[float] = []
+    returns_list: list[float] = []
+    hit_count = 0
+    ruined = False
+    n_bets = 0
+
+    for _, row in sub.iterrows():
+        ev_i = row[ev_col]
+        p_i = row[p_col]
+        hit_i = int(row[hit_col])
+
+        if pd.isna(ev_i) or pd.isna(p_i) or p_i <= 0 or ev_i <= 1.0:
+            continue
+
+        prior_odds = float(ev_i) / float(p_i)
+        if prior_odds <= 1.0:
+            continue
+
+        b = prior_odds - 1.0
+        f_full = max((float(p_i) - (1.0 - float(p_i)) / b), 0.0)
+        f_quarter = f_full * fraction
+
+        # 10円単位で切り捨て
+        bet_size_raw = f_quarter * balance
+        bet_size = max(int(bet_size_raw / 10) * 10, int(min_bet))
+
+        n_bets += 1
+
+        if hit_i:
+            profit = (prior_odds - 1.0) * bet_size
+            balance += profit
+            pnl_list.append(profit)
+            returns_list.append(profit / bet_size)
+            hit_count += 1
+        else:
+            balance -= bet_size
+            pnl_list.append(-float(bet_size))
+            returns_list.append(-1.0)
+
+        balance_series.append(balance)
+
+        if balance < ruin_threshold:
+            ruined = True
+            break
+
+    # MDD は残高時系列から直接計算（peak-to-trough in balance）
+    if len(balance_series) > 1:
+        bal_arr = np.array(balance_series, dtype=float)
+        running_max_bal = np.maximum.accumulate(bal_arr)
+        drawdown_bal = running_max_bal - bal_arr
+        mdd_yen = float(drawdown_bal.max())
+        # mdd_pct は初期資金比
+        mdd_pct = mdd_yen / max(initial_bankroll, 1.0)
+    else:
+        mdd_yen, mdd_pct = 0.0, 0.0
+
+    sharpe_raw = compute_sharpe_ratio(np.array(returns_list)) if returns_list else float("nan")
+    sharpe = None if (isinstance(sharpe_raw, float) and np.isnan(sharpe_raw)) else round(sharpe_raw, 6)
+
+    return {
+        "initial_capital": initial_bankroll,
+        "final_balance": round(balance, 2),
+        "total_profit_yen": round(balance - initial_bankroll, 2),
+        "final_return_pct": round((balance - initial_bankroll) / initial_bankroll, 6),
+        "n_bets": n_bets,
+        "hit_rate": round(hit_count / n_bets, 6) if n_bets > 0 else None,
+        "mdd_yen": round(mdd_yen, 2),
+        "mdd_pct": round(mdd_pct, 6),
+        "sharpe_per_bet": sharpe,
+        "ruined": ruined,
+        "balance_series": balance_series,
+    }
+
+
+def compute_risk_metrics(
+    df_bets: pd.DataFrame,
+    ev_thresholds: list[float] | None = None,
+    initial_capital: float = 100_000.0,
+    kelly_fraction: float = 0.25,
+    bet_type: str = "wide",
+) -> dict:
+    """
+    複数 EV 閾値でリスク調整評価指標をまとめて計算する。
+
+    Parameters
+    ----------
+    df_bets       : _collect_bets_per_race() の出力（race_date カラム必須）
+    ev_thresholds : 評価する EV 閾値リスト（デフォルト [1.0, 1.3]）
+    bet_type      : "wide" または "quin"
+
+    Returns
+    -------
+    dict: {"ev_1.0": {"fixed_stake": {...}, "kelly_quarter": {...}}, ...}
+    """
+    if ev_thresholds is None:
+        ev_thresholds = [1.0, 1.3]
+
+    ev_col = f"ev_{bet_type}"
+    hit_col = f"hit_{bet_type}"
+    pay_col = f"payout_{bet_type}"
+    p_col = f"p_{bet_type}"
+
+    df_sorted = df_bets.copy()
+    if "race_date" in df_sorted.columns:
+        df_sorted = df_sorted.sort_values("race_date").reset_index(drop=True)
+
+    result: dict = {}
+
+    for threshold in ev_thresholds:
+        sub = df_sorted[df_sorted[ev_col] >= threshold].copy()
+        n = len(sub)
+        key = f"ev_{threshold}"
+
+        if n == 0:
+            result[key] = {
+                "fixed_stake": {
+                    "n_bets": 0, "hit_rate": None, "roi": None,
+                    "mdd_yen": None, "mdd_pct": None,
+                    "sharpe_per_bet": None, "total_profit_yen": None,
+                },
+                "kelly_quarter": {
+                    "initial_capital": initial_capital,
+                    "final_balance": initial_capital,
+                    "n_bets": 0, "hit_rate": None,
+                    "mdd_yen": None, "mdd_pct": None,
+                    "sharpe_per_bet": None, "total_profit_yen": None,
+                    "final_return_pct": None, "ruined": False,
+                },
+            }
+            continue
+
+        hits = int(sub[hit_col].sum())
+        total_payout = float(sub[pay_col].sum())
+        total_stake = n * STAKE
+
+        # Fixed-stake PnL / returns
+        pnl_arr = np.where(
+            sub[hit_col].values == 1,
+            sub[pay_col].values.astype(float) - STAKE,
+            -STAKE,
+        ).astype(float)
+        returns_arr = np.where(
+            sub[hit_col].values == 1,
+            (sub[pay_col].values.astype(float) - STAKE) / STAKE,
+            -1.0,
+        ).astype(float)
+
+        # fixed stake MDD: cumulative PnL starting from 0
+        cumulative_pnl = np.concatenate([[0.0], np.cumsum(pnl_arr)])
+        running_max_fs = np.maximum.accumulate(cumulative_pnl)
+        drawdown_fs = running_max_fs - cumulative_pnl
+        mdd_yen_fs = float(drawdown_fs.max())
+        # mdd_pct は total_stake 比（固定ベットに初期資金概念がないため）
+        mdd_pct_fs = mdd_yen_fs / max(total_stake, 1.0)
+        sharpe_raw_fs = compute_sharpe_ratio(returns_arr)
+        sharpe_fs = None if (isinstance(sharpe_raw_fs, float) and np.isnan(sharpe_raw_fs)) else round(sharpe_raw_fs, 6)
+
+        fs = {
+            "n_bets": n,
+            "hit_rate": round(hits / n, 6),
+            "roi": round(total_payout / total_stake, 6),
+            "mdd_yen": round(mdd_yen_fs, 2),
+            "mdd_pct": round(mdd_pct_fs, 6),
+            "sharpe_per_bet": sharpe_fs,
+            "total_profit_yen": round(total_payout - total_stake, 2),
+        }
+
+        # Kelly quarter simulation（全件を渡してフィルタリングは内部で行う）
+        kq_result = simulate_kelly_quarter(
+            df_sorted,
+            initial_bankroll=initial_capital,
+            fraction=kelly_fraction,
+            ev_threshold=threshold,
+            ev_col=ev_col,
+            pay_col=pay_col,
+            hit_col=hit_col,
+            p_col=p_col,
+        )
+        kq = {
+            "initial_capital": kq_result["initial_capital"],
+            "final_balance": kq_result["final_balance"],
+            "n_bets": kq_result["n_bets"],
+            "hit_rate": kq_result["hit_rate"],
+            "mdd_yen": kq_result["mdd_yen"],
+            "mdd_pct": kq_result["mdd_pct"],
+            "sharpe_per_bet": kq_result["sharpe_per_bet"],
+            "total_profit_yen": kq_result["total_profit_yen"],
+            "final_return_pct": kq_result["final_return_pct"],
+            "ruined": kq_result["ruined"],
+        }
+
+        result[key] = {"fixed_stake": fs, "kelly_quarter": kq}
+
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Wide/Quinella EV simulation (eval only)")
     parser.add_argument("--output", type=str, default=None, help="Output JSON path")
@@ -687,9 +1026,9 @@ def main() -> None:
     else:
         best_condition = {}
 
-    # --- キャリブレーション --------------------------------------------------
-    print(f"\n--- Calibration Check (wide) ---")
-    calib_check = check_calibration(df_bets, n_bins=10)
+    # --- キャリブレーション確認（補正後・主出力）------------------------------
+    print(f"\n--- Calibration Check (wide, bracket isotonic applied) ---")
+    calib_check = check_calibration(df_bets, n_bins=10, p_col="p_wide")
     if calib_check["bins"]:
         print(f"  mean_abs_error: {calib_check['mean_abs_error']:.4f}")
         print(f"  max_abs_error : {calib_check['max_abs_error']:.4f}")
@@ -840,6 +1179,34 @@ def main() -> None:
                 f.write("\n")
             print(f"\n  Comparison saved: {comp_path}")
 
+    # --- リスク調整評価指標 ---------------------------------------------------
+    print(f"\n--- Risk-Adjusted Metrics (Wide) ---")
+    risk_metrics_wide = compute_risk_metrics(
+        df_bets,
+        ev_thresholds=[1.0, 1.3],
+        initial_capital=100_000.0,
+        kelly_fraction=0.25,
+        bet_type="wide",
+    )
+    for ev_key, metrics in risk_metrics_wide.items():
+        fs = metrics["fixed_stake"]
+        kq = metrics["kelly_quarter"]
+        print(f"\n[{ev_key}]")
+        if fs["n_bets"] > 0:
+            print(
+                f"  Fixed stake  : n={fs['n_bets']:,}, ROI={fs['roi']*100:.2f}%, "
+                f"MDD={fs['mdd_yen']:.0f}yen ({fs['mdd_pct']*100:.1f}%), "
+                f"Sharpe={fs['sharpe_per_bet']}"
+            )
+        else:
+            print(f"  Fixed stake  : n=0 (no bets above threshold)")
+        print(
+            f"  Kelly (1/4)  : initial={kq['initial_capital']:,.0f}yen, "
+            f"final={kq['final_balance']:,.0f}yen, "
+            f"MDD={kq['mdd_yen']:,.0f}yen ({kq['mdd_pct']*100:.1f}%), "
+            f"ruined={kq['ruined']}"
+        )
+
     # --- ev_results.json を拡張形式で保存 ------------------------------------
     def _to_json(v):
         if isinstance(v, (np.floating, float)):
@@ -869,6 +1236,24 @@ def main() -> None:
         "coverage_rate": round(n_quin_races_with_odds / n_total, 6) if n_total > 0 else 0.0,
     }
 
+    # risk_metrics: NaN/None を安全に変換
+    def _clean_risk(d: dict) -> dict:
+        out: dict = {}
+        for k, v in d.items():
+            if isinstance(v, dict):
+                out[k] = _clean_risk(v)
+            elif isinstance(v, (np.floating, float)):
+                out[k] = float(v) if not np.isnan(v) else None
+            elif isinstance(v, (np.integer, int)):
+                out[k] = int(v)
+            elif isinstance(v, bool):
+                out[k] = v
+            else:
+                out[k] = v
+        return out
+
+    risk_metrics_json = {"wide": _clean_risk(risk_metrics_wide)}
+
     results = {
         "n_races": n_races,
         "overall": {
@@ -889,6 +1274,7 @@ def main() -> None:
         "calibration_comparison": calib_comparison if calib_comparison else None,
         "wide_odds_coverage": wide_odds_coverage,
         "quinella_odds_coverage": quinella_odds_coverage,
+        "risk_metrics": risk_metrics_json,
     }
 
     out_path = Path(args.output) if args.output else (
