@@ -1001,12 +1001,17 @@ def analyze_ev_roi_by_condition(
             roi_ev_13 = float(df_ev13["payout_wide"].sum()) / (n_13 * STAKE)
             ev_lift_1_3 = roi_ev_13 - roi_all
         else:
+            roi_ev_13 = float("nan")
             ev_lift_1_3 = float("nan")
 
-        # 合否判定
+        # 合否判定: ev_lift >= 3pp かつ VALID ROI >= 100% を両方満たす必要がある
+        # roi_ev_filtered >= 1.0 なしでは損失条件が「有効」を通過していた
         if n_bets < min_bets:
             verdict = "判定保留"
-        elif (not np.isnan(ev_lift)) and ev_lift >= 0.030:
+        elif (
+            (not np.isnan(ev_lift)) and ev_lift >= 0.030
+            and (not np.isnan(roi_ev_filtered)) and roi_ev_filtered >= 1.0
+        ):
             verdict = "有効"
         else:
             verdict = "無効"
@@ -1020,6 +1025,8 @@ def analyze_ev_roi_by_condition(
             "roi_ev_filtered": None if np.isnan(roi_ev_filtered) else round(roi_ev_filtered, 6),
             "ev_lift": None if np.isnan(ev_lift) else round(ev_lift, 6),
             "ev_lift_1_3": None if np.isnan(ev_lift_1_3) else round(ev_lift_1_3, 6),
+            "n_bets_1_3": n_13,
+            "roi_ev_1_3": None if np.isnan(roi_ev_13) else round(roi_ev_13, 6),
             "hit_rate_ev_filtered": None if np.isnan(hit_rate_ev_filtered) else round(hit_rate_ev_filtered, 6),
             "mean_ev_filtered": None if np.isnan(mean_ev_filtered) else round(mean_ev_filtered, 6),
             "verdict": verdict,
@@ -1652,6 +1659,43 @@ def main() -> None:
                 roi_and_str = f"{roi_and:.4f}" if not np.isnan(roi_and) else "N/A"
                 print(f"  AND 複合: n={n_and}, ROI={roi_and_str}")
 
+        # --- course_code=4 限定 EV スイープ（単調増加確認）---
+        course4_thresholds = [0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.5]
+
+        print(f"\n--- course_code=4 限定 EV スイープ (VALID) ---")
+        df_bets_valid_c4 = df_bets_valid[df_bets_valid["course_code"] == 4].copy()
+        print(f"  course_code=4 VALID races: {len(df_bets_valid_c4):,}")
+        sweep_c4_valid = ev_threshold_sweep(df_bets_valid_c4, course4_thresholds, bet_type="wide")
+        print(sweep_c4_valid.to_string(index=False))
+
+        print(f"\n--- course_code=4 限定 EV スイープ (TEST) ---")
+        df_bets_test_c4 = df_bets[df_bets["course_code"] == 4].copy()
+        print(f"  course_code=4 TEST races: {len(df_bets_test_c4):,}")
+        sweep_c4_test = ev_threshold_sweep(df_bets_test_c4, course4_thresholds, bet_type="wide")
+        print(sweep_c4_test.to_string(index=False))
+
+        # 単調増加チェック（ROI が EV 閾値とともに単調増加するか）
+        c4_rr = sweep_c4_test["return_rate"].tolist()
+        c4_valid_rr = [
+            v for v in c4_rr
+            if v is not None and not (isinstance(v, float) and np.isnan(v))
+        ]
+        c4_is_monotone = (
+            all(c4_valid_rr[i] <= c4_valid_rr[i + 1] for i in range(len(c4_valid_rr) - 1))
+            if len(c4_valid_rr) >= 2 else False
+        )
+        print(f"\n  単調増加（TEST, ROI）: {'あり' if c4_is_monotone else 'なし'}")
+
+        # JSON 変換用ヘルパー（_df_to_records より先に定義が必要なため局所定義）
+        def _c4_row(row: dict) -> dict:
+            return {
+                k: (None if (isinstance(v, float) and np.isnan(v)) else v)
+                for k, v in row.items()
+            }
+
+        sweep_c4_valid_records = [_c4_row(r) for r in sweep_c4_valid.to_dict("records")]
+        sweep_c4_test_records = [_c4_row(r) for r in sweep_c4_test.to_dict("records")]
+
         # best_composite_roi_test
         if composite_or_result and composite_or_result["roi_test"] is not None:
             best_composite_roi_test = composite_or_result["roi_test"]
@@ -1681,6 +1725,12 @@ def main() -> None:
                 "individual_conditions": individual_conditions_test,
                 "composite_or": composite_or_result,
                 "composite_and": composite_and_result,
+            },
+            "course4_ev_sweep": {
+                "thresholds": course4_thresholds,
+                "valid": sweep_c4_valid_records,
+                "test": sweep_c4_test_records,
+                "test_is_monotone": c4_is_monotone,
             },
             "summary": {
                 "n_valid_effective_conditions": len(effective),

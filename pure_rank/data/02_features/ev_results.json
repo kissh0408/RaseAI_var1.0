@@ -206,7 +206,7 @@
     }
   },
   "best_condition_sweep": {
-    "diagnosis_date": "2026-07-01",
+    "diagnosis_date": "2026-07-02",
     "valid_n_races": 3392,
     "test_n_races": 4775,
     "ev_threshold": 1.0,
@@ -227,6 +227,8 @@
           "roi_ev_filtered": 1.641667,
           "ev_lift": 0.685379,
           "ev_lift_1_3": 0.587191,
+          "n_bets_1_3": 23,
+          "roi_ev_1_3": 1.543478,
           "hit_rate_ev_filtered": 0.270833,
           "mean_ev_filtered": 1.470164,
           "verdict": "有効"
@@ -240,6 +242,8 @@
           "roi_ev_filtered": 1.146988,
           "ev_lift": 0.245455,
           "ev_lift_1_3": 0.315134,
+          "n_bets_1_3": 42,
+          "roi_ev_1_3": 1.216667,
           "hit_rate_ev_filtered": 0.277108,
           "mean_ev_filtered": 1.504193,
           "verdict": "有効"
@@ -253,9 +257,11 @@
           "roi_ev_filtered": 0.823636,
           "ev_lift": 0.11289,
           "ev_lift_1_3": -0.189318,
+          "n_bets_1_3": 56,
+          "roi_ev_1_3": 0.521429,
           "hit_rate_ev_filtered": 0.2,
           "mean_ev_filtered": 1.832126,
-          "verdict": "有効"
+          "verdict": "無効"
         },
         {
           "dimension": "distance_category",
@@ -266,9 +272,11 @@
           "roi_ev_filtered": 0.900769,
           "ev_lift": 0.082243,
           "ev_lift_1_3": 0.001146,
+          "n_bets_1_3": 61,
+          "roi_ev_1_3": 0.819672,
           "hit_rate_ev_filtered": 0.215385,
           "mean_ev_filtered": 1.539042,
-          "verdict": "有効"
+          "verdict": "無効"
         },
         {
           "dimension": "surface_code",
@@ -279,9 +287,11 @@
           "roi_ev_filtered": 0.939024,
           "ev_lift": 0.074457,
           "ev_lift_1_3": 0.204183,
+          "n_bets_1_3": 16,
+          "roi_ev_1_3": 1.06875,
           "hit_rate_ev_filtered": 0.292683,
           "mean_ev_filtered": 1.435181,
-          "verdict": "有効"
+          "verdict": "無効"
         },
         {
           "dimension": "course_code",
@@ -292,9 +302,11 @@
           "roi_ev_filtered": 0.964486,
           "ev_lift": 0.069,
           "ev_lift_1_3": 0.08044,
+          "n_bets_1_3": 54,
+          "roi_ev_1_3": 0.975926,
           "hit_rate_ev_filtered": 0.214953,
           "mean_ev_filtered": 1.67275,
-          "verdict": "有効"
+          "verdict": "無効"
         },
         {
           "dimension": "odds_band",
@@ -305,6 +317,8 @@
           "roi_ev_filtered": 0.734437,
           "ev_lift": 0.02354,
           "ev_lift_1_3": -0.061977,
+          "n_bets_1_3": 139,
+          "roi_ev_1_3": 0.648921,
           "hit_rate_ev_filtered": 0.059603,
           "mean_ev_filtered": 2.306086,
           "verdict": "無効"
@@ -318,6 +332,8 @@
           "roi_ev_filtered": 0.850183,
           "ev_lift": 0.008513,
           "ev_lift_1_3": 0.04583,
+          "n_bets_1_3": 40,
+          "roi_ev_1_3": 0.8875,
           "hit_rate_ev_filtered": 0.315018,
           "mean_ev_filtered": 1.161287,
           "verdict": "無効"
@@ -331,6 +347,8 @@
           "roi_ev_filtered": 0.0,
           "ev_lift": 0.0,
           "ev_lift_1_3": 0.0,
+          "n_bets_1_3": 29,
+          "roi_ev_1_3": 0.0,
           "hit_rate_ev_filtered": 0.0,
           "mean_ev_filtered": 6.864955,
           "verdict": "判定保留"
@@ -344,6 +362,8 @@
           "roi_ev_filtered": 0.810948,
           "ev_lift": -0.001825,
           "ev_lift_1_3": -0.082077,
+          "n_bets_1_3": 316,
+          "roi_ev_1_3": 0.730696,
           "hit_rate_ev_filtered": 0.187908,
           "mean_ev_filtered": 1.744328,
           "verdict": "無効"
@@ -357,6 +377,8 @@
           "roi_ev_filtered": 0.774203,
           "ev_lift": -0.01946,
           "ev_lift_1_3": -0.170758,
+          "n_bets_1_3": 179,
+          "roi_ev_1_3": 0.622905,
           "hit_rate_ev_filtered": 0.182609,
           "mean_ev_filtered": 1.606119,
           "verdict": "無効"
@@ -370,6 +392,8 @@
           "roi_ev_filtered": 0.793151,
           "ev_lift": -0.022474,
           "ev_lift_1_3": 0.211298,
+          "n_bets_1_3": 26,
+          "roi_ev_1_3": 1.026923,
           "hit_rate_ev_filtered": 0.232877,
           "mean_ev_filtered": 1.403206,
           "verdict": "無効"
@@ -383,6 +407,8 @@
           "roi_ev_filtered": 0.845714,
           "ev_lift": -0.035474,
           "ev_lift_1_3": -0.250419,
+          "n_bets_1_3": 13,
+          "roi_ev_1_3": 0.630769,
           "hit_rate_ev_filtered": 0.285714,
           "mean_ev_filtered": 1.414529,
           "verdict": "無効"
@@ -396,6 +422,8 @@
           "roi_ev_filtered": 0.73871,
           "ev_lift": -0.044147,
           "ev_lift_1_3": -0.04127,
+          "n_bets_1_3": 315,
+          "roi_ev_1_3": 0.741587,
           "hit_rate_ev_filtered": 0.154122,
           "mean_ev_filtered": 1.459496,
           "verdict": "無効"
@@ -409,6 +437,8 @@
           "roi_ev_filtered": 0.735369,
           "ev_lift": -0.05359,
           "ev_lift_1_3": -0.179481,
+          "n_bets_1_3": 211,
+          "roi_ev_1_3": 0.609479,
           "hit_rate_ev_filtered": 0.165394,
           "mean_ev_filtered": 1.609648,
           "verdict": "無効"
@@ -422,6 +452,8 @@
           "roi_ev_filtered": 0.772848,
           "ev_lift": -0.05414,
           "ev_lift_1_3": 0.035976,
+          "n_bets_1_3": 81,
+          "roi_ev_1_3": 0.862963,
           "hit_rate_ev_filtered": 0.192053,
           "mean_ev_filtered": 1.628928,
           "verdict": "無効"
@@ -435,6 +467,8 @@
           "roi_ev_filtered": 0.754902,
           "ev_lift": -0.055688,
           "ev_lift_1_3": -0.169706,
+          "n_bets_1_3": 181,
+          "roi_ev_1_3": 0.640884,
           "hit_rate_ev_filtered": 0.179272,
           "mean_ev_filtered": 1.570907,
           "verdict": "無効"
@@ -448,6 +482,8 @@
           "roi_ev_filtered": 0.770482,
           "ev_lift": -0.056132,
           "ev_lift_1_3": -0.017281,
+          "n_bets_1_3": 75,
+          "roi_ev_1_3": 0.809333,
           "hit_rate_ev_filtered": 0.246988,
           "mean_ev_filtered": 1.460023,
           "verdict": "無効"
@@ -461,6 +497,8 @@
           "roi_ev_filtered": 0.676087,
           "ev_lift": -0.060024,
           "ev_lift_1_3": -0.152778,
+          "n_bets_1_3": 24,
+          "roi_ev_1_3": 0.583333,
           "hit_rate_ev_filtered": 0.195652,
           "mean_ev_filtered": 1.512088,
           "verdict": "無効"
@@ -474,6 +512,8 @@
           "roi_ev_filtered": 0.726068,
           "ev_lift": -0.0628,
           "ev_lift_1_3": -0.196998,
+          "n_bets_1_3": 246,
+          "roi_ev_1_3": 0.59187,
           "hit_rate_ev_filtered": 0.162393,
           "mean_ev_filtered": 1.794735,
           "verdict": "無効"
@@ -487,6 +527,8 @@
           "roi_ev_filtered": 0.733197,
           "ev_lift": -0.072909,
           "ev_lift_1_3": -0.122211,
+          "n_bets_1_3": 267,
+          "roi_ev_1_3": 0.683895,
           "hit_rate_ev_filtered": 0.155738,
           "mean_ev_filtered": 1.79417,
           "verdict": "無効"
@@ -500,6 +542,8 @@
           "roi_ev_filtered": 0.750797,
           "ev_lift": -0.078099,
           "ev_lift_1_3": -0.075639,
+          "n_bets_1_3": 261,
+          "roi_ev_1_3": 0.753257,
           "hit_rate_ev_filtered": 0.185259,
           "mean_ev_filtered": 1.553694,
           "verdict": "無効"
@@ -513,6 +557,8 @@
           "roi_ev_filtered": 0.719207,
           "ev_lift": -0.078382,
           "ev_lift_1_3": -0.09262,
+          "n_bets_1_3": 161,
+          "roi_ev_1_3": 0.704969,
           "hit_rate_ev_filtered": 0.195122,
           "mean_ev_filtered": 1.553767,
           "verdict": "無効"
@@ -526,6 +572,8 @@
           "roi_ev_filtered": 0.71908,
           "ev_lift": -0.083224,
           "ev_lift_1_3": -0.12281,
+          "n_bets_1_3": 395,
+          "roi_ev_1_3": 0.679494,
           "hit_rate_ev_filtered": 0.170501,
           "mean_ev_filtered": 1.711487,
           "verdict": "無効"
@@ -539,6 +587,8 @@
           "roi_ev_filtered": 0.746154,
           "ev_lift": -0.097507,
           "ev_lift_1_3": -0.109781,
+          "n_bets_1_3": 183,
+          "roi_ev_1_3": 0.73388,
           "hit_rate_ev_filtered": 0.159763,
           "mean_ev_filtered": 1.819485,
           "verdict": "無効"
@@ -552,6 +602,8 @@
           "roi_ev_filtered": 0.691089,
           "ev_lift": -0.099744,
           "ev_lift_1_3": -0.436833,
+          "n_bets_1_3": 50,
+          "roi_ev_1_3": 0.354,
           "hit_rate_ev_filtered": 0.158416,
           "mean_ev_filtered": 1.563223,
           "verdict": "無効"
@@ -565,6 +617,8 @@
           "roi_ev_filtered": 0.701687,
           "ev_lift": -0.132389,
           "ev_lift_1_3": -0.149631,
+          "n_bets_1_3": 225,
+          "roi_ev_1_3": 0.684444,
           "hit_rate_ev_filtered": 0.171084,
           "mean_ev_filtered": 1.791883,
           "verdict": "無効"
@@ -578,6 +632,8 @@
           "roi_ev_filtered": 0.677124,
           "ev_lift": -0.142625,
           "ev_lift_1_3": -0.074466,
+          "n_bets_1_3": 159,
+          "roi_ev_1_3": 0.745283,
           "hit_rate_ev_filtered": 0.166667,
           "mean_ev_filtered": 1.541166,
           "verdict": "無効"
@@ -591,6 +647,8 @@
           "roi_ev_filtered": 0.741379,
           "ev_lift": -0.147954,
           "ev_lift_1_3": -0.656,
+          "n_bets_1_3": 12,
+          "roi_ev_1_3": 0.233333,
           "hit_rate_ev_filtered": 0.241379,
           "mean_ev_filtered": 1.365309,
           "verdict": "判定保留"
@@ -604,6 +662,8 @@
           "roi_ev_filtered": 0.62,
           "ev_lift": -0.161007,
           "ev_lift_1_3": -0.308876,
+          "n_bets_1_3": 61,
+          "roi_ev_1_3": 0.472131,
           "hit_rate_ev_filtered": 0.12,
           "mean_ev_filtered": 1.599949,
           "verdict": "無効"
@@ -617,6 +677,8 @@
           "roi_ev_filtered": 0.378571,
           "ev_lift": -0.170581,
           "ev_lift_1_3": -0.437153,
+          "n_bets_1_3": 25,
+          "roi_ev_1_3": 0.112,
           "hit_rate_ev_filtered": 0.142857,
           "mean_ev_filtered": 1.542101,
           "verdict": "無効"
@@ -630,6 +692,8 @@
           "roi_ev_filtered": 0.623333,
           "ev_lift": -0.198431,
           "ev_lift_1_3": -0.363952,
+          "n_bets_1_3": 64,
+          "roi_ev_1_3": 0.457813,
           "hit_rate_ev_filtered": 0.166667,
           "mean_ev_filtered": 1.657109,
           "verdict": "無効"
@@ -643,6 +707,8 @@
           "roi_ev_filtered": 0.70119,
           "ev_lift": -0.209336,
           "ev_lift_1_3": -0.464015,
+          "n_bets_1_3": 43,
+          "roi_ev_1_3": 0.446512,
           "hit_rate_ev_filtered": 0.202381,
           "mean_ev_filtered": 1.915643,
           "verdict": "無効"
@@ -656,6 +722,8 @@
           "roi_ev_filtered": 0.568254,
           "ev_lift": -0.211661,
           "ev_lift_1_3": -0.004915,
+          "n_bets_1_3": 100,
+          "roi_ev_1_3": 0.775,
           "hit_rate_ev_filtered": 0.132275,
           "mean_ev_filtered": 1.619075,
           "verdict": "無効"
@@ -669,6 +737,8 @@
           "roi_ev_filtered": 0.701961,
           "ev_lift": -0.220638,
           "ev_lift_1_3": -0.613903,
+          "n_bets_1_3": 23,
+          "roi_ev_1_3": 0.308696,
           "hit_rate_ev_filtered": 0.176471,
           "mean_ev_filtered": 1.467431,
           "verdict": "無効"
@@ -682,6 +752,8 @@
           "roi_ev_filtered": 0.434545,
           "ev_lift": -0.252014,
           "ev_lift_1_3": -0.175845,
+          "n_bets_1_3": 28,
+          "roi_ev_1_3": 0.510714,
           "hit_rate_ev_filtered": 0.127273,
           "mean_ev_filtered": 1.608451,
           "verdict": "無効"
@@ -697,34 +769,14 @@
           "dimension": "track_condition_code",
           "value": "3",
           "ev_lift": 0.245455
-        },
-        {
-          "dimension": "course_code",
-          "value": "4",
-          "ev_lift": 0.11289
-        },
-        {
-          "dimension": "distance_category",
-          "value": "2",
-          "ev_lift": 0.082243
-        },
-        {
-          "dimension": "surface_code",
-          "value": "5",
-          "ev_lift": 0.074457
-        },
-        {
-          "dimension": "course_code",
-          "value": "10",
-          "ev_lift": 0.069
         }
       ],
       "summary": {
         "n_dimensions_scanned": 8,
         "n_conditions_total": 36,
-        "n_conditions_effective": 6,
+        "n_conditions_effective": 2,
         "n_conditions_pending": 2,
-        "n_conditions_invalid": 28
+        "n_conditions_invalid": 32
       },
       "score_diff_quantiles": {
         "p33": 0.175877,
@@ -750,42 +802,6 @@
           "hit_rate_test": 0.156627,
           "ev_lift_test": -0.21352,
           "verdict": "無効"
-        },
-        {
-          "dimension": "course_code",
-          "value": "4",
-          "n_bets_test": 148,
-          "roi_test": 1.07973,
-          "hit_rate_test": 0.216216,
-          "ev_lift_test": 0.269824,
-          "verdict": "有効"
-        },
-        {
-          "dimension": "distance_category",
-          "value": "2",
-          "n_bets_test": 211,
-          "roi_test": 0.808531,
-          "hit_rate_test": 0.194313,
-          "ev_lift_test": -0.001375,
-          "verdict": "無効"
-        },
-        {
-          "dimension": "surface_code",
-          "value": "5",
-          "n_bets_test": 53,
-          "roi_test": 0.358491,
-          "hit_rate_test": 0.132075,
-          "ev_lift_test": -0.451415,
-          "verdict": "無効"
-        },
-        {
-          "dimension": "course_code",
-          "value": "10",
-          "n_bets_test": 154,
-          "roi_test": 0.635065,
-          "hit_rate_test": 0.162338,
-          "ev_lift_test": -0.174841,
-          "verdict": "無効"
         }
       ],
       "composite_or": {
@@ -797,27 +813,11 @@
           [
             "track_condition_code",
             "3"
-          ],
-          [
-            "course_code",
-            "4"
-          ],
-          [
-            "distance_category",
-            "2"
-          ],
-          [
-            "surface_code",
-            "5"
-          ],
-          [
-            "course_code",
-            "10"
           ]
         ],
-        "n_bets_test": 603,
-        "roi_test": 0.750249,
-        "hit_rate_test": 0.18408
+        "n_bets_test": 135,
+        "roi_test": 0.58,
+        "hit_rate_test": 0.155556
       },
       "composite_and": {
         "conditions_used": [
@@ -828,33 +828,131 @@
           [
             "track_condition_code",
             "3"
-          ],
-          [
-            "course_code",
-            "4"
-          ],
-          [
-            "distance_category",
-            "2"
-          ],
-          [
-            "surface_code",
-            "5"
-          ],
-          [
-            "course_code",
-            "10"
           ]
         ],
-        "n_bets_test": 0,
-        "roi_test": null,
-        "hit_rate_test": null
+        "n_bets_test": 5,
+        "roi_test": 0.0,
+        "hit_rate_test": 0.0
       }
     },
+    "course4_ev_sweep": {
+      "thresholds": [
+        0.8,
+        0.9,
+        1.0,
+        1.1,
+        1.2,
+        1.3,
+        1.5
+      ],
+      "valid": [
+        {
+          "threshold": 0.8,
+          "n_bets": 202,
+          "hit_rate": 0.24752475247524752,
+          "return_rate": 0.7876237623762377,
+          "total_profit": -4290.0
+        },
+        {
+          "threshold": 0.9,
+          "n_bets": 147,
+          "hit_rate": 0.2108843537414966,
+          "return_rate": 0.7761904761904762,
+          "total_profit": -3290.0
+        },
+        {
+          "threshold": 1.0,
+          "n_bets": 110,
+          "hit_rate": 0.2,
+          "return_rate": 0.8236363636363636,
+          "total_profit": -1940.0
+        },
+        {
+          "threshold": 1.1,
+          "n_bets": 90,
+          "hit_rate": 0.16666666666666666,
+          "return_rate": 0.7611111111111111,
+          "total_profit": -2150.0
+        },
+        {
+          "threshold": 1.2,
+          "n_bets": 71,
+          "hit_rate": 0.15492957746478872,
+          "return_rate": 0.7577464788732394,
+          "total_profit": -1720.0
+        },
+        {
+          "threshold": 1.3,
+          "n_bets": 56,
+          "hit_rate": 0.10714285714285714,
+          "return_rate": 0.5214285714285715,
+          "total_profit": -2680.0
+        },
+        {
+          "threshold": 1.5,
+          "n_bets": 36,
+          "hit_rate": 0.1111111111111111,
+          "return_rate": 0.5777777777777777,
+          "total_profit": -1520.0
+        }
+      ],
+      "test": [
+        {
+          "threshold": 0.8,
+          "n_bets": 247,
+          "hit_rate": 0.2591093117408907,
+          "return_rate": 0.9793522267206478,
+          "total_profit": -510.0
+        },
+        {
+          "threshold": 0.9,
+          "n_bets": 193,
+          "hit_rate": 0.23834196891191708,
+          "return_rate": 0.9958549222797928,
+          "total_profit": -80.0
+        },
+        {
+          "threshold": 1.0,
+          "n_bets": 148,
+          "hit_rate": 0.21621621621621623,
+          "return_rate": 1.0797297297297297,
+          "total_profit": 1180.0
+        },
+        {
+          "threshold": 1.1,
+          "n_bets": 116,
+          "hit_rate": 0.1896551724137931,
+          "return_rate": 1.0525862068965517,
+          "total_profit": 610.0
+        },
+        {
+          "threshold": 1.2,
+          "n_bets": 87,
+          "hit_rate": 0.1724137931034483,
+          "return_rate": 0.960919540229885,
+          "total_profit": -340.0
+        },
+        {
+          "threshold": 1.3,
+          "n_bets": 69,
+          "hit_rate": 0.15942028985507245,
+          "return_rate": 0.9347826086956522,
+          "total_profit": -450.0
+        },
+        {
+          "threshold": 1.5,
+          "n_bets": 46,
+          "hit_rate": 0.06521739130434782,
+          "return_rate": 0.46304347826086956,
+          "total_profit": -2470.0
+        }
+      ],
+      "test_is_monotone": false
+    },
     "summary": {
-      "n_valid_effective_conditions": 6,
-      "n_test_validated_conditions": 1,
-      "best_composite_roi_test": 0.750249,
+      "n_valid_effective_conditions": 2,
+      "n_test_validated_conditions": 0,
+      "best_composite_roi_test": 0.58,
       "roi_target_achieved": false,
       "note": ""
     }
