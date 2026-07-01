@@ -149,6 +149,7 @@ def _build_hist_features(df: pd.DataFrame) -> pd.DataFrame:
     df["hist_avg_rank_5"] = grp_horse["finish_rank"].transform(
         lambda x: x.shift(1).rolling(5, min_periods=1).mean()
     )
+
     df["hist_win_rate"] = grp_horse["is_win"].transform(
         lambda x: x.shift(1).expanding().mean()
     )
