@@ -45,6 +45,32 @@ PAIR_KEY = tuple[int, int]
 STAKE = 100.0
 
 
+# ─── 条件帯分類ヘルパー ────────────────────────────────────────────────────────
+
+def _horse_count_band(n: int) -> str:
+    """出走頭数をバンドに分類する。"""
+    if n <= 10:
+        return "le10"
+    elif n <= 14:
+        return "11-14"
+    else:
+        return "15plus"
+
+
+def _odds_band(odds: float | None) -> str:
+    """ワイドオッズ帯を分類する。"""
+    if odds is None:
+        return "na"
+    elif odds < 3.0:
+        return "lt3"
+    elif odds < 8.0:
+        return "3-8"
+    elif odds < 20.0:
+        return "8-20"
+    else:
+        return "20plus"
+
+
 def _build_hr_lookup(hr_df: pd.DataFrame, bet_type: str) -> dict[str, dict[PAIR_KEY, int]]:
     """race_id -> {(h1,h2): payout} の辞書を構築。"""
     sub = hr_df[hr_df["bet_type"] == bet_type]
@@ -210,6 +236,16 @@ def _collect_bets_per_race(
             "weather_code": int(first["weather_code"]) if "weather_code" in grp.columns else -1,
             # 時系列順 MDD 計算のため race_date を追加
             "race_date": first["race_date"] if "race_date" in grp.columns else pd.NaT,
+            # --- 条件診断用追加カラム ---
+            "course_code": int(first["course_code"]) if "course_code" in grp.columns else -1,
+            "track_condition_code": int(first["track_condition_code"]) if "track_condition_code" in grp.columns else -1,
+            "horse_count": len(grp),
+            "horse_count_band": _horse_count_band(len(grp)),
+            # scores は pred_score 降順ソート済み。Top-1 と Top-2 のスコア差（モデル確信度）
+            "score_diff": float(scores[0] - scores[1]) if len(scores) >= 2 else float("nan"),
+            # ベット選択ペアの事前オッズ（NaN = オッズ未取得）
+            "prior_odds_wide": float(prior_odds_wide) if prior_odds_wide is not None else float("nan"),
+            "odds_band": _odds_band(prior_odds_wide),
         })
 
     return pd.DataFrame(rows)
@@ -889,6 +925,253 @@ def compute_risk_metrics(
     return result
 
 
+# ─── EV-ROI 条件診断関数 ──────────────────────────────────────────────────────
+
+
+def assign_score_diff_band(
+    df_bets_valid: pd.DataFrame,
+    df_bets_test: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """VALID で分位点を計算し、VALID と TEST 両方に score_diff_band を付与する。
+
+    VALID の 33/67 パーセンタイルを基準とする。
+    テストで分位点を再計算することはデータリークになるため禁止。
+    NaN は最低バンド "low" に分類する。
+    """
+    low_q = df_bets_valid["score_diff"].quantile(0.33)
+    high_q = df_bets_valid["score_diff"].quantile(0.67)
+    for df in [df_bets_valid, df_bets_test]:
+        df["score_diff_band"] = df["score_diff"].apply(
+            lambda d: "low" if (pd.isna(d) or d < low_q) else ("high" if d >= high_q else "mid")
+        )
+    return df_bets_valid, df_bets_test
+
+
+def analyze_ev_roi_by_condition(
+    df_bets: pd.DataFrame,
+    condition_col: str,
+    ev_threshold: float = 1.0,
+    min_bets: int = 30,
+) -> pd.DataFrame:
+    """条件列ごとに EV lift を計算して返す。
+
+    Parameters
+    ----------
+    df_bets       : _collect_bets_per_race() の出力 DataFrame
+                    必須カラム: ev_wide, hit_wide, payout_wide, [condition_col]
+    condition_col : 集計軸となるカラム名（"course_code", "weather_code" 等）
+    ev_threshold  : EV フィルター閾値
+    min_bets      : この件数未満の条件は "判定保留" とする
+
+    Returns
+    -------
+    pd.DataFrame: 以下のカラムを持つ DataFrame（ev_lift 降順ソート）
+      dimension, value, n_races_all, n_bets_ev_filtered,
+      roi_all, roi_ev_filtered, ev_lift, ev_lift_1_3,
+      hit_rate_ev_filtered, mean_ev_filtered, verdict
+    """
+    if condition_col not in df_bets.columns:
+        return pd.DataFrame()
+
+    records: list[dict] = []
+
+    for val, df_all in df_bets.groupby(condition_col):
+        n_races_all = len(df_all)
+        roi_all = float(df_all["payout_wide"].sum()) / (n_races_all * STAKE)
+
+        # EV フィルター後（NaN は pandas の比較で自動除外）
+        df_ev = df_all[df_all["ev_wide"] >= ev_threshold]
+        n_bets = len(df_ev)
+
+        if n_bets > 0:
+            roi_ev_filtered = float(df_ev["payout_wide"].sum()) / (n_bets * STAKE)
+            ev_lift = roi_ev_filtered - roi_all
+            hit_rate_ev_filtered = float(df_ev["hit_wide"].mean())
+            mean_ev_filtered = float(df_ev["ev_wide"].mean())
+        else:
+            roi_ev_filtered = float("nan")
+            ev_lift = float("nan")
+            hit_rate_ev_filtered = float("nan")
+            mean_ev_filtered = float("nan")
+
+        # EV >= 1.3 リフト（参考値）
+        df_ev13 = df_all[df_all["ev_wide"] >= 1.3]
+        n_13 = len(df_ev13)
+        if n_13 > 0:
+            roi_ev_13 = float(df_ev13["payout_wide"].sum()) / (n_13 * STAKE)
+            ev_lift_1_3 = roi_ev_13 - roi_all
+        else:
+            ev_lift_1_3 = float("nan")
+
+        # 合否判定
+        if n_bets < min_bets:
+            verdict = "判定保留"
+        elif (not np.isnan(ev_lift)) and ev_lift >= 0.030:
+            verdict = "有効"
+        else:
+            verdict = "無効"
+
+        records.append({
+            "dimension": condition_col,
+            "value": str(val),
+            "n_races_all": n_races_all,
+            "n_bets_ev_filtered": n_bets,
+            "roi_all": round(roi_all, 6),
+            "roi_ev_filtered": None if np.isnan(roi_ev_filtered) else round(roi_ev_filtered, 6),
+            "ev_lift": None if np.isnan(ev_lift) else round(ev_lift, 6),
+            "ev_lift_1_3": None if np.isnan(ev_lift_1_3) else round(ev_lift_1_3, 6),
+            "hit_rate_ev_filtered": None if np.isnan(hit_rate_ev_filtered) else round(hit_rate_ev_filtered, 6),
+            "mean_ev_filtered": None if np.isnan(mean_ev_filtered) else round(mean_ev_filtered, 6),
+            "verdict": verdict,
+        })
+
+    df_result = pd.DataFrame(records)
+    if df_result.empty:
+        return df_result
+
+    # ev_lift 降順ソート（None は最下位）
+    df_result["_sort_key"] = df_result["ev_lift"].apply(
+        lambda x: x if x is not None else float("-inf")
+    )
+    df_result = (
+        df_result.sort_values("_sort_key", ascending=False)
+        .drop(columns=["_sort_key"])
+        .reset_index(drop=True)
+    )
+    return df_result
+
+
+def screen_effective_ev_conditions(
+    df_bets: pd.DataFrame,
+    condition_cols: list[str] | None = None,
+    ev_threshold: float = 1.0,
+    min_lift: float = 0.030,
+    min_bets: int = 30,
+) -> dict:
+    """全次元をスキャンして有効条件を返す。
+
+    Parameters
+    ----------
+    df_bets        : _collect_bets_per_race() の出力（追加カラム付き）
+    condition_cols : スキャンする次元のリスト。None の場合は 8 次元すべてをスキャン
+    ev_threshold   : EV フィルター閾値（デフォルト 1.0）
+    min_lift       : 有効条件の最小 ev_lift（倍率差。デフォルト 0.030 = 3pp）
+    min_bets       : 最小ベット件数（デフォルト 30）
+
+    Returns
+    -------
+    dict: screened_at / ev_threshold / min_lift / min_bets /
+          all_results / effective_conditions / summary
+    """
+    if condition_cols is None:
+        condition_cols = [
+            "surface_code",
+            "distance_category",
+            "weather_code",
+            "course_code",
+            "track_condition_code",
+            "horse_count_band",
+            "score_diff_band",
+            "odds_band",
+        ]
+
+    all_records: list[dict] = []
+
+    for col in condition_cols:
+        if col not in df_bets.columns:
+            continue
+        df_analysis = analyze_ev_roi_by_condition(df_bets, col, ev_threshold, min_bets)
+        if df_analysis.empty:
+            continue
+        all_records.extend(df_analysis.to_dict("records"))
+
+    # 全結果を ev_lift 降順にソート（None は最下位）
+    all_records.sort(
+        key=lambda x: x["ev_lift"] if x["ev_lift"] is not None else float("-inf"),
+        reverse=True,
+    )
+
+    effective_conditions = [
+        {"dimension": r["dimension"], "value": r["value"], "ev_lift": r["ev_lift"]}
+        for r in all_records
+        if r["verdict"] == "有効"
+    ]
+
+    n_total = len(all_records)
+    n_effective = sum(1 for r in all_records if r["verdict"] == "有効")
+    n_pending = sum(1 for r in all_records if r["verdict"] == "判定保留")
+    n_invalid = sum(1 for r in all_records if r["verdict"] == "無効")
+
+    result: dict = {
+        "screened_at": "VALID",
+        "ev_threshold": ev_threshold,
+        "min_lift": min_lift,
+        "min_bets": min_bets,
+        "all_results": all_records,
+        "effective_conditions": effective_conditions,
+        "summary": {
+            "n_dimensions_scanned": len(condition_cols),
+            "n_conditions_total": n_total,
+            "n_conditions_effective": n_effective,
+            "n_conditions_pending": n_pending,
+            "n_conditions_invalid": n_invalid,
+        },
+    }
+
+    if not effective_conditions:
+        result["message"] = "有効条件なし"
+
+    return result
+
+
+def build_composite_ev_filter(
+    df_bets: pd.DataFrame,
+    conditions: list[tuple[str, str]],
+    ev_threshold: float = 1.0,
+    mode: str = "OR",
+) -> pd.DataFrame:
+    """複数条件のフィルタを適用してベット結果を返す。
+
+    Parameters
+    ----------
+    df_bets    : _collect_bets_per_race() の出力
+    conditions : [(dimension, value), ...] のリスト
+                 例: [("weather_code", "3"), ("track_condition_code", "3")]
+    ev_threshold: EV 閾値（各条件に共通適用）
+    mode       : "OR"  = いずれか一つの条件を満たすレース
+                 "AND" = すべての条件を同時に満たすレース
+
+    Returns
+    -------
+    pd.DataFrame: フィルタ通過したレースのみの df_bets（EV >= ev_threshold 適用済み）
+
+    Raises
+    ------
+    ValueError: conditions が空リストの場合
+    ValueError: mode が "OR" でも "AND" でもない場合
+    """
+    if not conditions:
+        raise ValueError("conditions must not be empty")
+    if mode not in ("OR", "AND"):
+        raise ValueError(f"mode must be 'OR' or 'AND', got: {mode!r}")
+
+    if mode == "OR":
+        mask = pd.Series(False, index=df_bets.index)
+        for dim, val in conditions:
+            if dim in df_bets.columns:
+                mask |= df_bets[dim].astype(str) == str(val)
+    else:  # AND
+        mask = pd.Series(True, index=df_bets.index)
+        for dim, val in conditions:
+            if dim in df_bets.columns:
+                mask &= df_bets[dim].astype(str) == str(val)
+            else:
+                mask &= False
+
+    df_filtered = df_bets[mask & (df_bets["ev_wide"] >= ev_threshold)].copy()
+    return df_filtered
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Wide/Quinella EV simulation (eval only)")
     parser.add_argument("--output", type=str, default=None, help="Output JSON path")
@@ -909,6 +1192,15 @@ def main() -> None:
         action="store_true",
         help="Output calibration method comparison table (uses saved models or fits if missing)",
     )
+    parser.add_argument(
+        "--diagnose-ev-conditions",
+        action="store_true",
+        help=(
+            "VALID (2024) で EV-ROI 相関が成立する条件をスクリーニングし、"
+            "TEST (2025+) で独立検証する。結果を ev_results.json の "
+            "'best_condition_sweep' に保存する。"
+        ),
+    )
     args = parser.parse_args()
 
     cfg = load_config()
@@ -927,6 +1219,7 @@ def main() -> None:
 
     print(f"Loading features: {feat_path}")
     df = pd.read_parquet(feat_path)
+    train_end_ts = pd.Timestamp(cfg["training"]["train_end"])
     valid_end_ts = pd.Timestamp(cfg["training"]["valid_end"])
     df_test = df[df["race_date"] > valid_end_ts].copy()
     print(f"Test set: {len(df_test):,} rows, {df_test['race_id'].nunique():,} races")
@@ -1207,6 +1500,208 @@ def main() -> None:
             f"ruined={kq['ruined']}"
         )
 
+    # --- EV-ROI 条件診断 ------------------------------------------------------
+    best_condition_sweep: dict | None = None
+
+    if args.diagnose_ev_conditions:
+        import datetime as _datetime
+
+        print(f"\n{'='*60}")
+        print("=== EV-ROI 条件診断 (--diagnose-ev-conditions) ===")
+        print(f"{'='*60}")
+
+        # VALID セット構築（2024年）
+        df_valid = df[
+            (df["race_date"] > train_end_ts) &
+            (df["race_date"] <= valid_end_ts)
+        ].copy()
+        print(f"\nVALID set: {len(df_valid):,} rows, {df_valid['race_id'].nunique():,} races")
+
+        valid_years = sorted(df_valid["race_date"].dt.year.unique().tolist())
+        print(f"Loading WideOdds for VALID years: {valid_years}")
+        wide_odds_lookup_valid = _build_odds_lookup(valid_years, odds_dir, "Wide")
+        print(f"Loading QuinellaOdds for VALID years: {valid_years}")
+        quinella_odds_lookup_valid = _build_odds_lookup(valid_years, odds_dir, "Quinella")
+
+        preds_valid = ensemble_predict(models, df_valid[feature_cols])
+
+        print(f"\nCollecting VALID per-race bets (T_opt={T_opt})...")
+        df_bets_valid = _collect_bets_per_race(
+            df_valid, preds_valid, hr_df, T_opt,
+            wide_odds_lookup=wide_odds_lookup_valid,
+            quinella_odds_lookup=quinella_odds_lookup_valid,
+        )
+        print(f"  VALID bets collected: {len(df_bets_valid):,} races")
+
+        # score_diff_band を VALID 分位点で VALID・TEST 両方に付与
+        print(f"\nAssigning score_diff_band (VALID quantiles)...")
+        df_bets_valid, df_bets = assign_score_diff_band(df_bets_valid, df_bets)
+        valid_sd_low_q = float(df_bets_valid["score_diff"].quantile(0.33))
+        valid_sd_high_q = float(df_bets_valid["score_diff"].quantile(0.67))
+        print(f"  score_diff quantiles: 33%={valid_sd_low_q:.4f}, 67%={valid_sd_high_q:.4f}")
+
+        # VALID でのスクリーニング
+        print(f"\nScreening VALID (2024) for effective EV conditions ...")
+        print(f"  ev_threshold=1.0, min_lift=3pp, min_bets=30")
+        valid_screening = screen_effective_ev_conditions(
+            df_bets_valid,
+            ev_threshold=1.0,
+            min_lift=0.030,
+            min_bets=30,
+        )
+
+        n_eff = valid_screening["summary"]["n_conditions_effective"]
+        n_total_cond = valid_screening["summary"]["n_conditions_total"]
+        print(f"\n  結果: {n_eff}/{n_total_cond} 条件が有効 (ev_lift>=3pp, n>=30)")
+
+        effective = valid_screening.get("effective_conditions", [])
+        for cond in effective:
+            ev_lft = cond["ev_lift"]
+            print(f"    [有効] {cond['dimension']}={cond['value']}: ev_lift={ev_lft:.4f}")
+        if not effective:
+            print("    (有効条件なし)")
+
+        # TEST での独立検証
+        individual_conditions_test: list[dict] = []
+        composite_or_result: dict | None = None
+        composite_and_result: dict | None = None
+
+        if effective:
+            print(f"\n--- TEST (2025+) での独立検証 ---")
+            test_roi_all = float(df_bets["payout_wide"].sum()) / (len(df_bets) * STAKE)
+
+            for cond in effective:
+                dim = cond["dimension"]
+                val = cond["value"]
+
+                # 単一条件でフィルタ（AND = その条件のみ AND EV>=1.0）
+                df_filtered = build_composite_ev_filter(
+                    df_bets, [(dim, val)], ev_threshold=1.0, mode="AND"
+                )
+                n_test = len(df_filtered)
+
+                if n_test > 0:
+                    roi_test = float(df_filtered["payout_wide"].sum()) / (n_test * STAKE)
+                    hit_rate_test = float(df_filtered["hit_wide"].mean())
+                    ev_lift_test = roi_test - test_roi_all
+                    if roi_test >= 1.0 and n_test >= 30:
+                        verdict_test = "有効"
+                    elif n_test < 30:
+                        verdict_test = "判定保留"
+                    else:
+                        verdict_test = "無効"
+                else:
+                    roi_test = float("nan")
+                    hit_rate_test = float("nan")
+                    ev_lift_test = float("nan")
+                    verdict_test = "判定保留"
+
+                result_item = {
+                    "dimension": dim,
+                    "value": val,
+                    "n_bets_test": n_test,
+                    "roi_test": None if np.isnan(roi_test) else round(roi_test, 6),
+                    "hit_rate_test": None if np.isnan(hit_rate_test) else round(hit_rate_test, 6),
+                    "ev_lift_test": None if np.isnan(ev_lift_test) else round(ev_lift_test, 6),
+                    "verdict": verdict_test,
+                }
+                individual_conditions_test.append(result_item)
+
+                roi_str = f"{roi_test:.4f}" if not np.isnan(roi_test) else "N/A"
+                print(f"  {dim}={val}: n={n_test}, ROI={roi_str}, verdict={verdict_test}")
+
+            # OR 複合フィルター
+            or_conditions = [(c["dimension"], c["value"]) for c in effective]
+            df_or = build_composite_ev_filter(df_bets, or_conditions, ev_threshold=1.0, mode="OR")
+            n_or = len(df_or)
+            if n_or > 0:
+                roi_or = float(df_or["payout_wide"].sum()) / (n_or * STAKE)
+                hit_or = float(df_or["hit_wide"].mean())
+            else:
+                roi_or = float("nan")
+                hit_or = float("nan")
+
+            composite_or_result = {
+                "conditions_used": or_conditions,
+                "n_bets_test": n_or,
+                "roi_test": None if np.isnan(roi_or) else round(roi_or, 6),
+                "hit_rate_test": None if np.isnan(hit_or) else round(hit_or, 6),
+            }
+            roi_or_str = f"{roi_or:.4f}" if not np.isnan(roi_or) else "N/A"
+            print(f"\n  OR 複合: n={n_or}, ROI={roi_or_str}")
+
+            # AND 複合フィルター（有効条件 2 件以上の場合のみ）
+            if len(effective) >= 2:
+                df_and = build_composite_ev_filter(
+                    df_bets, or_conditions, ev_threshold=1.0, mode="AND"
+                )
+                n_and = len(df_and)
+                if n_and > 0:
+                    roi_and = float(df_and["payout_wide"].sum()) / (n_and * STAKE)
+                    hit_and = float(df_and["hit_wide"].mean())
+                else:
+                    roi_and = float("nan")
+                    hit_and = float("nan")
+
+                composite_and_result = {
+                    "conditions_used": or_conditions,
+                    "n_bets_test": n_and,
+                    "roi_test": None if np.isnan(roi_and) else round(roi_and, 6),
+                    "hit_rate_test": None if np.isnan(hit_and) else round(hit_and, 6),
+                }
+                roi_and_str = f"{roi_and:.4f}" if not np.isnan(roi_and) else "N/A"
+                print(f"  AND 複合: n={n_and}, ROI={roi_and_str}")
+
+        # best_composite_roi_test
+        if composite_or_result and composite_or_result["roi_test"] is not None:
+            best_composite_roi_test = composite_or_result["roi_test"]
+        else:
+            best_composite_roi_test = None
+
+        roi_target_achieved = (
+            best_composite_roi_test is not None and best_composite_roi_test >= 1.0
+        )
+
+        # valid_screening に score_diff 分位点情報を追加
+        valid_screening_out = dict(valid_screening)
+        valid_screening_out["score_diff_quantiles"] = {
+            "p33": round(valid_sd_low_q, 6),
+            "p67": round(valid_sd_high_q, 6),
+        }
+
+        best_condition_sweep = {
+            "diagnosis_date": _datetime.date.today().isoformat(),
+            "valid_n_races": len(df_bets_valid),
+            "test_n_races": len(df_bets),
+            "ev_threshold": 1.0,
+            "min_lift_pp": 3.0,
+            "min_bets": 30,
+            "valid_screening": valid_screening_out,
+            "test_validation": {
+                "individual_conditions": individual_conditions_test,
+                "composite_or": composite_or_result,
+                "composite_and": composite_and_result,
+            },
+            "summary": {
+                "n_valid_effective_conditions": len(effective),
+                "n_test_validated_conditions": sum(
+                    1 for r in individual_conditions_test if r["verdict"] == "有効"
+                ),
+                "best_composite_roi_test": best_composite_roi_test,
+                "roi_target_achieved": roi_target_achieved,
+                "note": (
+                    "有効条件が 0 件の場合は composite フィルタを構成しない"
+                    if not effective else ""
+                ),
+            },
+        }
+
+        print(f"\n=== 診断サマリー ===")
+        print(f"  VALID 有効条件: {len(effective)} 件")
+        print(f"  TEST ROI target (>=100%): {'達成' if roi_target_achieved else '未達成'}")
+        if best_composite_roi_test is not None:
+            print(f"  OR 複合 ROI: {best_composite_roi_test:.4f}")
+
     # --- ev_results.json を拡張形式で保存 ------------------------------------
     def _to_json(v):
         if isinstance(v, (np.floating, float)):
@@ -1275,6 +1770,7 @@ def main() -> None:
         "wide_odds_coverage": wide_odds_coverage,
         "quinella_odds_coverage": quinella_odds_coverage,
         "risk_metrics": risk_metrics_json,
+        "best_condition_sweep": best_condition_sweep,
     }
 
     out_path = Path(args.output) if args.output else (

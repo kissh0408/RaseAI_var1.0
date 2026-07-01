@@ -8,9 +8,9 @@
   },
   "ev_filtered": {
     "threshold": 1.0,
-    "wide_n_bets": 447,
-    "wide_hit_rate": 0.16331096196868009,
-    "wide_return_rate": 0.8425055928411633,
+    "wide_n_bets": 1478,
+    "wide_hit_rate": 0.2050067658998647,
+    "wide_return_rate": 0.8571718538565629,
     "quinella_n_bets": 1876,
     "quinella_hit_rate": 0.09594882729211088,
     "quinella_return_rate": 0.7829957356076759
@@ -18,59 +18,59 @@
   "ev_sweep_wide": [
     {
       "threshold": 0.8,
-      "n_bets": 1434,
-      "hit_rate": 0.2112970711297071,
-      "return_rate": 0.7906555090655509,
-      "total_profit": -30020.0
+      "n_bets": 2624,
+      "hit_rate": 0.25152439024390244,
+      "return_rate": 0.8095655487804878,
+      "total_profit": -49970.0
     },
     {
       "threshold": 0.9,
-      "n_bets": 773,
-      "hit_rate": 0.17723156532988357,
-      "return_rate": 0.8087968952134541,
-      "total_profit": -14780.0
+      "n_bets": 1970,
+      "hit_rate": 0.22842639593908629,
+      "return_rate": 0.8355837563451777,
+      "total_profit": -32390.0
     },
     {
       "threshold": 1.0,
-      "n_bets": 447,
-      "hit_rate": 0.16331096196868009,
-      "return_rate": 0.8425055928411633,
-      "total_profit": -7040.0
+      "n_bets": 1478,
+      "hit_rate": 0.2050067658998647,
+      "return_rate": 0.8571718538565629,
+      "total_profit": -21110.0
     },
     {
       "threshold": 1.05,
-      "n_bets": 358,
-      "hit_rate": 0.14804469273743018,
-      "return_rate": 0.8282122905027933,
-      "total_profit": -6150.0
+      "n_bets": 1287,
+      "hit_rate": 0.1864801864801865,
+      "return_rate": 0.8357420357420358,
+      "total_profit": -21140.0
     },
     {
       "threshold": 1.1,
-      "n_bets": 278,
-      "hit_rate": 0.13309352517985612,
-      "return_rate": 0.7107913669064748,
-      "total_profit": -8040.0
+      "n_bets": 1139,
+      "hit_rate": 0.17734855136084285,
+      "return_rate": 0.8229148375768218,
+      "total_profit": -20170.0
     },
     {
       "threshold": 1.2,
-      "n_bets": 185,
-      "hit_rate": 0.10810810810810811,
-      "return_rate": 0.6394594594594595,
-      "total_profit": -6670.0
+      "n_bets": 891,
+      "hit_rate": 0.1638608305274972,
+      "return_rate": 0.8372615039281706,
+      "total_profit": -14500.0
     },
     {
       "threshold": 1.3,
-      "n_bets": 130,
-      "hit_rate": 0.09230769230769231,
-      "return_rate": 0.6507692307692308,
-      "total_profit": -4540.0
+      "n_bets": 698,
+      "hit_rate": 0.15472779369627507,
+      "return_rate": 0.8600286532951289,
+      "total_profit": -9770.0
     },
     {
       "threshold": 1.5,
-      "n_bets": 68,
-      "hit_rate": 0.04411764705882353,
-      "return_rate": 0.4161764705882353,
-      "total_profit": -3970.0
+      "n_bets": 480,
+      "hit_rate": 0.12083333333333333,
+      "return_rate": 0.814375,
+      "total_profit": -8910.0
     }
   ],
   "ev_sweep_quinella": [
@@ -133,36 +133,16 @@
   ],
   "best_condition": {
     "condition_type": "weather_code",
-    "condition_value": "2",
-    "n_bets": 127,
-    "return_rate": 1.0929133858267717
+    "condition_value": "3",
+    "n_bets": 60,
+    "return_rate": 1.2683333333333333
   },
   "calibration": {
-    "mean_abs_error": 0.0257,
-    "max_abs_error": 0.0601,
-    "n_bins": 9
+    "mean_abs_error": 0.0871,
+    "max_abs_error": 0.1661,
+    "n_bins": 10
   },
   "calibration_comparison": null,
-  "bracket_calibration_comparison": {
-    "bracket_isotonic": {
-      "mean_abs_error_before": 0.0871,
-      "mean_abs_error_after": 0.0257,
-      "ev_1.0_n_bets_before": 1478,
-      "ev_1.0_n_bets_after": 447,
-      "ev_1.0_roi_before": 0.857172,
-      "ev_1.0_roi_after": 0.842506,
-      "ev_1.3_n_bets_before": 698,
-      "ev_1.3_n_bets_after": 130,
-      "ev_1.3_roi_before": 0.860029,
-      "ev_1.3_roi_after": 0.650769,
-      "fitted_brackets": [
-        0,
-        1,
-        2,
-        3
-      ]
-    }
-  },
   "wide_odds_coverage": {
     "n_races_total": 4775,
     "n_races_with_odds": 4775,
@@ -179,51 +159,704 @@
     "wide": {
       "ev_1.0": {
         "fixed_stake": {
-          "n_bets": 447,
-          "hit_rate": 0.163311,
-          "roi": 0.842506,
-          "mdd_yen": 7940.0,
-          "mdd_pct": 0.177629,
-          "sharpe_per_bet": -0.069794,
-          "total_profit_yen": -7040.0
+          "n_bets": 1478,
+          "hit_rate": 0.205007,
+          "roi": 0.857172,
+          "mdd_yen": 22540.0,
+          "mdd_pct": 0.152503,
+          "sharpe_per_bet": -0.070858,
+          "total_profit_yen": -21110.0
         },
         "kelly_quarter": {
           "initial_capital": 100000.0,
-          "final_balance": 24255.0,
-          "n_bets": 446,
-          "hit_rate": 0.161435,
-          "mdd_yen": 77561.0,
-          "mdd_pct": 0.77561,
-          "sharpe_per_bet": -0.121565,
-          "total_profit_yen": -75745.0,
-          "final_return_pct": -0.75745,
-          "ruined": 0
+          "final_balance": 998.0,
+          "n_bets": 420,
+          "hit_rate": 0.171429,
+          "mdd_yen": 99002.0,
+          "mdd_pct": 0.99002,
+          "sharpe_per_bet": -0.201509,
+          "total_profit_yen": -99002.0,
+          "final_return_pct": -0.99002,
+          "ruined": 1
         }
       },
       "ev_1.3": {
         "fixed_stake": {
-          "n_bets": 130,
-          "hit_rate": 0.092308,
-          "roi": 0.650769,
-          "mdd_yen": 4940.0,
-          "mdd_pct": 0.38,
-          "sharpe_per_bet": -0.1601,
-          "total_profit_yen": -4540.0
+          "n_bets": 698,
+          "hit_rate": 0.154728,
+          "roi": 0.860029,
+          "mdd_yen": 10780.0,
+          "mdd_pct": 0.154441,
+          "sharpe_per_bet": -0.060221,
+          "total_profit_yen": -9770.0
         },
         "kelly_quarter": {
           "initial_capital": 100000.0,
-          "final_balance": 40708.0,
-          "n_bets": 130,
-          "hit_rate": 0.092308,
-          "mdd_yen": 62988.0,
-          "mdd_pct": 0.62988,
-          "sharpe_per_bet": -0.175361,
-          "total_profit_yen": -59292.0,
-          "final_return_pct": -0.59292,
-          "ruined": 0
+          "final_balance": 940.0,
+          "n_bets": 253,
+          "hit_rate": 0.114625,
+          "mdd_yen": 99060.0,
+          "mdd_pct": 0.9906,
+          "sharpe_per_bet": -0.210975,
+          "total_profit_yen": -99060.0,
+          "final_return_pct": -0.9906,
+          "ruined": 1
         }
       }
     }
   },
-  "divergence_comparison": null
+  "best_condition_sweep": {
+    "diagnosis_date": "2026-07-01",
+    "valid_n_races": 3392,
+    "test_n_races": 4775,
+    "ev_threshold": 1.0,
+    "min_lift_pp": 3.0,
+    "min_bets": 30,
+    "valid_screening": {
+      "screened_at": "VALID",
+      "ev_threshold": 1.0,
+      "min_lift": 0.03,
+      "min_bets": 30,
+      "all_results": [
+        {
+          "dimension": "course_code",
+          "value": "1",
+          "n_races_all": 167,
+          "n_bets_ev_filtered": 48,
+          "roi_all": 0.956287,
+          "roi_ev_filtered": 1.641667,
+          "ev_lift": 0.685379,
+          "ev_lift_1_3": 0.587191,
+          "hit_rate_ev_filtered": 0.270833,
+          "mean_ev_filtered": 1.470164,
+          "verdict": "有効"
+        },
+        {
+          "dimension": "track_condition_code",
+          "value": "3",
+          "n_races_all": 261,
+          "n_bets_ev_filtered": 83,
+          "roi_all": 0.901533,
+          "roi_ev_filtered": 1.146988,
+          "ev_lift": 0.245455,
+          "ev_lift_1_3": 0.315134,
+          "hit_rate_ev_filtered": 0.277108,
+          "mean_ev_filtered": 1.504193,
+          "verdict": "有効"
+        },
+        {
+          "dimension": "course_code",
+          "value": "4",
+          "n_races_all": 335,
+          "n_bets_ev_filtered": 110,
+          "roi_all": 0.710746,
+          "roi_ev_filtered": 0.823636,
+          "ev_lift": 0.11289,
+          "ev_lift_1_3": -0.189318,
+          "hit_rate_ev_filtered": 0.2,
+          "mean_ev_filtered": 1.832126,
+          "verdict": "有効"
+        },
+        {
+          "dimension": "distance_category",
+          "value": "2",
+          "n_races_all": 502,
+          "n_bets_ev_filtered": 130,
+          "roi_all": 0.818526,
+          "roi_ev_filtered": 0.900769,
+          "ev_lift": 0.082243,
+          "ev_lift_1_3": 0.001146,
+          "hit_rate_ev_filtered": 0.215385,
+          "mean_ev_filtered": 1.539042,
+          "verdict": "有効"
+        },
+        {
+          "dimension": "surface_code",
+          "value": "5",
+          "n_races_all": 127,
+          "n_bets_ev_filtered": 41,
+          "roi_all": 0.864567,
+          "roi_ev_filtered": 0.939024,
+          "ev_lift": 0.074457,
+          "ev_lift_1_3": 0.204183,
+          "hit_rate_ev_filtered": 0.292683,
+          "mean_ev_filtered": 1.435181,
+          "verdict": "有効"
+        },
+        {
+          "dimension": "course_code",
+          "value": "10",
+          "n_races_all": 288,
+          "n_bets_ev_filtered": 107,
+          "roi_all": 0.895486,
+          "roi_ev_filtered": 0.964486,
+          "ev_lift": 0.069,
+          "ev_lift_1_3": 0.08044,
+          "hit_rate_ev_filtered": 0.214953,
+          "mean_ev_filtered": 1.67275,
+          "verdict": "有効"
+        },
+        {
+          "dimension": "odds_band",
+          "value": "8-20",
+          "n_races_all": 156,
+          "n_bets_ev_filtered": 151,
+          "roi_all": 0.710897,
+          "roi_ev_filtered": 0.734437,
+          "ev_lift": 0.02354,
+          "ev_lift_1_3": -0.061977,
+          "hit_rate_ev_filtered": 0.059603,
+          "mean_ev_filtered": 2.306086,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "odds_band",
+          "value": "lt3",
+          "n_races_all": 2227,
+          "n_bets_ev_filtered": 273,
+          "roi_all": 0.84167,
+          "roi_ev_filtered": 0.850183,
+          "ev_lift": 0.008513,
+          "ev_lift_1_3": 0.04583,
+          "hit_rate_ev_filtered": 0.315018,
+          "mean_ev_filtered": 1.161287,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "odds_band",
+          "value": "20plus",
+          "n_races_all": 29,
+          "n_bets_ev_filtered": 29,
+          "roi_all": 0.0,
+          "roi_ev_filtered": 0.0,
+          "ev_lift": 0.0,
+          "ev_lift_1_3": 0.0,
+          "hit_rate_ev_filtered": 0.0,
+          "mean_ev_filtered": 6.864955,
+          "verdict": "判定保留"
+        },
+        {
+          "dimension": "weather_code",
+          "value": "1",
+          "n_races_all": 2059,
+          "n_bets_ev_filtered": 612,
+          "roi_all": 0.812773,
+          "roi_ev_filtered": 0.810948,
+          "ev_lift": -0.001825,
+          "ev_lift_1_3": -0.082077,
+          "hit_rate_ev_filtered": 0.187908,
+          "mean_ev_filtered": 1.744328,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "score_diff_band",
+          "value": "mid",
+          "n_races_all": 1152,
+          "n_bets_ev_filtered": 345,
+          "roi_all": 0.793663,
+          "roi_ev_filtered": 0.774203,
+          "ev_lift": -0.01946,
+          "ev_lift_1_3": -0.170758,
+          "hit_rate_ev_filtered": 0.182609,
+          "mean_ev_filtered": 1.606119,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "distance_category",
+          "value": "3",
+          "n_races_all": 256,
+          "n_bets_ev_filtered": 73,
+          "roi_all": 0.815625,
+          "roi_ev_filtered": 0.793151,
+          "ev_lift": -0.022474,
+          "ev_lift_1_3": 0.211298,
+          "hit_rate_ev_filtered": 0.232877,
+          "mean_ev_filtered": 1.403206,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "track_condition_code",
+          "value": "0",
+          "n_races_all": 101,
+          "n_bets_ev_filtered": 35,
+          "roi_all": 0.881188,
+          "roi_ev_filtered": 0.845714,
+          "ev_lift": -0.035474,
+          "ev_lift_1_3": -0.250419,
+          "hit_rate_ev_filtered": 0.285714,
+          "mean_ev_filtered": 1.414529,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "odds_band",
+          "value": "3-8",
+          "n_races_all": 980,
+          "n_bets_ev_filtered": 558,
+          "roi_all": 0.782857,
+          "roi_ev_filtered": 0.73871,
+          "ev_lift": -0.044147,
+          "ev_lift_1_3": -0.04127,
+          "hit_rate_ev_filtered": 0.154122,
+          "mean_ev_filtered": 1.459496,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "distance_category",
+          "value": "1",
+          "n_races_all": 1422,
+          "n_bets_ev_filtered": 393,
+          "roi_all": 0.788959,
+          "roi_ev_filtered": 0.735369,
+          "ev_lift": -0.05359,
+          "ev_lift_1_3": -0.179481,
+          "hit_rate_ev_filtered": 0.165394,
+          "mean_ev_filtered": 1.609648,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "course_code",
+          "value": "6",
+          "n_races_all": 478,
+          "n_bets_ev_filtered": 151,
+          "roi_all": 0.826987,
+          "roi_ev_filtered": 0.772848,
+          "ev_lift": -0.05414,
+          "ev_lift_1_3": 0.035976,
+          "hit_rate_ev_filtered": 0.192053,
+          "mean_ev_filtered": 1.628928,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "horse_count_band",
+          "value": "11-14",
+          "n_races_all": 1152,
+          "n_bets_ev_filtered": 357,
+          "roi_all": 0.81059,
+          "roi_ev_filtered": 0.754902,
+          "ev_lift": -0.055688,
+          "ev_lift_1_3": -0.169706,
+          "hit_rate_ev_filtered": 0.179272,
+          "mean_ev_filtered": 1.570907,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "horse_count_band",
+          "value": "le10",
+          "n_races_all": 635,
+          "n_bets_ev_filtered": 166,
+          "roi_all": 0.826614,
+          "roi_ev_filtered": 0.770482,
+          "ev_lift": -0.056132,
+          "ev_lift_1_3": -0.017281,
+          "hit_rate_ev_filtered": 0.246988,
+          "mean_ev_filtered": 1.460023,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "course_code",
+          "value": "2",
+          "n_races_all": 144,
+          "n_bets_ev_filtered": 46,
+          "roi_all": 0.736111,
+          "roi_ev_filtered": 0.676087,
+          "ev_lift": -0.060024,
+          "ev_lift_1_3": -0.152778,
+          "hit_rate_ev_filtered": 0.195652,
+          "mean_ev_filtered": 1.512088,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "surface_code",
+          "value": "1",
+          "n_races_all": 1590,
+          "n_bets_ev_filtered": 468,
+          "roi_all": 0.788868,
+          "roi_ev_filtered": 0.726068,
+          "ev_lift": -0.0628,
+          "ev_lift_1_3": -0.196998,
+          "hit_rate_ev_filtered": 0.162393,
+          "mean_ev_filtered": 1.794735,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "horse_count_band",
+          "value": "15plus",
+          "n_races_all": 1605,
+          "n_bets_ev_filtered": 488,
+          "roi_all": 0.806106,
+          "roi_ev_filtered": 0.733197,
+          "ev_lift": -0.072909,
+          "ev_lift_1_3": -0.122211,
+          "hit_rate_ev_filtered": 0.155738,
+          "mean_ev_filtered": 1.79417,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "surface_code",
+          "value": "2",
+          "n_races_all": 1675,
+          "n_bets_ev_filtered": 502,
+          "roi_all": 0.828896,
+          "roi_ev_filtered": 0.750797,
+          "ev_lift": -0.078099,
+          "ev_lift_1_3": -0.075639,
+          "hit_rate_ev_filtered": 0.185259,
+          "mean_ev_filtered": 1.553694,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "score_diff_band",
+          "value": "high",
+          "n_races_all": 1120,
+          "n_bets_ev_filtered": 328,
+          "roi_all": 0.797589,
+          "roi_ev_filtered": 0.719207,
+          "ev_lift": -0.078382,
+          "ev_lift_1_3": -0.09262,
+          "hit_rate_ev_filtered": 0.195122,
+          "mean_ev_filtered": 1.553767,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "track_condition_code",
+          "value": "1",
+          "n_races_all": 2518,
+          "n_bets_ev_filtered": 739,
+          "roi_all": 0.802303,
+          "roi_ev_filtered": 0.71908,
+          "ev_lift": -0.083224,
+          "ev_lift_1_3": -0.12281,
+          "hit_rate_ev_filtered": 0.170501,
+          "mean_ev_filtered": 1.711487,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "score_diff_band",
+          "value": "low",
+          "n_races_all": 1120,
+          "n_bets_ev_filtered": 338,
+          "roi_all": 0.843661,
+          "roi_ev_filtered": 0.746154,
+          "ev_lift": -0.097507,
+          "ev_lift_1_3": -0.109781,
+          "hit_rate_ev_filtered": 0.159763,
+          "mean_ev_filtered": 1.819485,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "course_code",
+          "value": "3",
+          "n_races_all": 240,
+          "n_bets_ev_filtered": 101,
+          "roi_all": 0.790833,
+          "roi_ev_filtered": 0.691089,
+          "ev_lift": -0.099744,
+          "ev_lift_1_3": -0.436833,
+          "hit_rate_ev_filtered": 0.158416,
+          "mean_ev_filtered": 1.563223,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "distance_category",
+          "value": "0",
+          "n_races_all": 1212,
+          "n_bets_ev_filtered": 415,
+          "roi_all": 0.834076,
+          "roi_ev_filtered": 0.701687,
+          "ev_lift": -0.132389,
+          "ev_lift_1_3": -0.149631,
+          "hit_rate_ev_filtered": 0.171084,
+          "mean_ev_filtered": 1.791883,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "weather_code",
+          "value": "2",
+          "n_races_all": 1038,
+          "n_bets_ev_filtered": 306,
+          "roi_all": 0.81975,
+          "roi_ev_filtered": 0.677124,
+          "ev_lift": -0.142625,
+          "ev_lift_1_3": -0.074466,
+          "hit_rate_ev_filtered": 0.166667,
+          "mean_ev_filtered": 1.541166,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "track_condition_code",
+          "value": "4",
+          "n_races_all": 75,
+          "n_bets_ev_filtered": 29,
+          "roi_all": 0.889333,
+          "roi_ev_filtered": 0.741379,
+          "ev_lift": -0.147954,
+          "ev_lift_1_3": -0.656,
+          "hit_rate_ev_filtered": 0.241379,
+          "mean_ev_filtered": 1.365309,
+          "verdict": "判定保留"
+        },
+        {
+          "dimension": "track_condition_code",
+          "value": "2",
+          "n_races_all": 437,
+          "n_bets_ev_filtered": 125,
+          "roi_all": 0.781007,
+          "roi_ev_filtered": 0.62,
+          "ev_lift": -0.161007,
+          "ev_lift_1_3": -0.308876,
+          "hit_rate_ev_filtered": 0.12,
+          "mean_ev_filtered": 1.599949,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "weather_code",
+          "value": "3",
+          "n_races_all": 118,
+          "n_bets_ev_filtered": 42,
+          "roi_all": 0.549153,
+          "roi_ev_filtered": 0.378571,
+          "ev_lift": -0.170581,
+          "ev_lift_1_3": -0.437153,
+          "hit_rate_ev_filtered": 0.142857,
+          "mean_ev_filtered": 1.542101,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "course_code",
+          "value": "5",
+          "n_races_all": 510,
+          "n_bets_ev_filtered": 120,
+          "roi_all": 0.821765,
+          "roi_ev_filtered": 0.623333,
+          "ev_lift": -0.198431,
+          "ev_lift_1_3": -0.363952,
+          "hit_rate_ev_filtered": 0.166667,
+          "mean_ev_filtered": 1.657109,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "course_code",
+          "value": "7",
+          "n_races_all": 342,
+          "n_bets_ev_filtered": 84,
+          "roi_all": 0.910526,
+          "roi_ev_filtered": 0.70119,
+          "ev_lift": -0.209336,
+          "ev_lift_1_3": -0.464015,
+          "hit_rate_ev_filtered": 0.202381,
+          "mean_ev_filtered": 1.915643,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "course_code",
+          "value": "8",
+          "n_races_all": 702,
+          "n_bets_ev_filtered": 189,
+          "roi_all": 0.779915,
+          "roi_ev_filtered": 0.568254,
+          "ev_lift": -0.211661,
+          "ev_lift_1_3": -0.004915,
+          "hit_rate_ev_filtered": 0.132275,
+          "mean_ev_filtered": 1.619075,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "weather_code",
+          "value": "4",
+          "n_races_all": 177,
+          "n_bets_ev_filtered": 51,
+          "roi_all": 0.922599,
+          "roi_ev_filtered": 0.701961,
+          "ev_lift": -0.220638,
+          "ev_lift_1_3": -0.613903,
+          "hit_rate_ev_filtered": 0.176471,
+          "mean_ev_filtered": 1.467431,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "course_code",
+          "value": "9",
+          "n_races_all": 186,
+          "n_bets_ev_filtered": 55,
+          "roi_all": 0.686559,
+          "roi_ev_filtered": 0.434545,
+          "ev_lift": -0.252014,
+          "ev_lift_1_3": -0.175845,
+          "hit_rate_ev_filtered": 0.127273,
+          "mean_ev_filtered": 1.608451,
+          "verdict": "無効"
+        }
+      ],
+      "effective_conditions": [
+        {
+          "dimension": "course_code",
+          "value": "1",
+          "ev_lift": 0.685379
+        },
+        {
+          "dimension": "track_condition_code",
+          "value": "3",
+          "ev_lift": 0.245455
+        },
+        {
+          "dimension": "course_code",
+          "value": "4",
+          "ev_lift": 0.11289
+        },
+        {
+          "dimension": "distance_category",
+          "value": "2",
+          "ev_lift": 0.082243
+        },
+        {
+          "dimension": "surface_code",
+          "value": "5",
+          "ev_lift": 0.074457
+        },
+        {
+          "dimension": "course_code",
+          "value": "10",
+          "ev_lift": 0.069
+        }
+      ],
+      "summary": {
+        "n_dimensions_scanned": 8,
+        "n_conditions_total": 36,
+        "n_conditions_effective": 6,
+        "n_conditions_pending": 2,
+        "n_conditions_invalid": 28
+      },
+      "score_diff_quantiles": {
+        "p33": 0.175877,
+        "p67": 0.459014
+      }
+    },
+    "test_validation": {
+      "individual_conditions": [
+        {
+          "dimension": "course_code",
+          "value": "1",
+          "n_bets_test": 57,
+          "roi_test": 0.505263,
+          "hit_rate_test": 0.140351,
+          "ev_lift_test": -0.304643,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "track_condition_code",
+          "value": "3",
+          "n_bets_test": 83,
+          "roi_test": 0.596386,
+          "hit_rate_test": 0.156627,
+          "ev_lift_test": -0.21352,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "course_code",
+          "value": "4",
+          "n_bets_test": 148,
+          "roi_test": 1.07973,
+          "hit_rate_test": 0.216216,
+          "ev_lift_test": 0.269824,
+          "verdict": "有効"
+        },
+        {
+          "dimension": "distance_category",
+          "value": "2",
+          "n_bets_test": 211,
+          "roi_test": 0.808531,
+          "hit_rate_test": 0.194313,
+          "ev_lift_test": -0.001375,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "surface_code",
+          "value": "5",
+          "n_bets_test": 53,
+          "roi_test": 0.358491,
+          "hit_rate_test": 0.132075,
+          "ev_lift_test": -0.451415,
+          "verdict": "無効"
+        },
+        {
+          "dimension": "course_code",
+          "value": "10",
+          "n_bets_test": 154,
+          "roi_test": 0.635065,
+          "hit_rate_test": 0.162338,
+          "ev_lift_test": -0.174841,
+          "verdict": "無効"
+        }
+      ],
+      "composite_or": {
+        "conditions_used": [
+          [
+            "course_code",
+            "1"
+          ],
+          [
+            "track_condition_code",
+            "3"
+          ],
+          [
+            "course_code",
+            "4"
+          ],
+          [
+            "distance_category",
+            "2"
+          ],
+          [
+            "surface_code",
+            "5"
+          ],
+          [
+            "course_code",
+            "10"
+          ]
+        ],
+        "n_bets_test": 603,
+        "roi_test": 0.750249,
+        "hit_rate_test": 0.18408
+      },
+      "composite_and": {
+        "conditions_used": [
+          [
+            "course_code",
+            "1"
+          ],
+          [
+            "track_condition_code",
+            "3"
+          ],
+          [
+            "course_code",
+            "4"
+          ],
+          [
+            "distance_category",
+            "2"
+          ],
+          [
+            "surface_code",
+            "5"
+          ],
+          [
+            "course_code",
+            "10"
+          ]
+        ],
+        "n_bets_test": 0,
+        "roi_test": null,
+        "hit_rate_test": null
+      }
+    },
+    "summary": {
+      "n_valid_effective_conditions": 6,
+      "n_test_validated_conditions": 1,
+      "best_composite_roi_test": 0.750249,
+      "roi_target_achieved": false,
+      "note": ""
+    }
+  }
 }
