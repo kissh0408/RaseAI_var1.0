@@ -54,36 +54,37 @@ def _build_hr_lookup(hr_df: pd.DataFrame, bet_type: str) -> dict[str, dict[PAIR_
     return lookup
 
 
-def _build_wide_odds_lookup(
+def _build_odds_lookup(
     years: list[int],
     odds_dir: Path,
+    odds_type: str,
 ) -> dict[str, dict[PAIR_KEY, float]]:
-    """WideOdds_YYYY.csv を複数年読み込み、race_id -> {(h1,h2): odds} の辞書を返す。
+    """{odds_type}Odds_YYYY.csv を複数年読み込み、race_id -> {(h1,h2): odds} の辞書を返す。
 
     Parameters
     ----------
-    years : テストセットの年リスト
-    odds_dir : WideOdds CSV が格納されたディレクトリ
+    years     : テストセットの年リスト
+    odds_dir  : Odds CSV が格納されたディレクトリ
+    odds_type : "Wide" または "Quinella"
 
     Returns
     -------
     dict[race_id_str, dict[(h1,h2), odds]]
-        - race_id_str: str 16 桁（WideOdds の int64 を str() 変換したもの）
-          features_*.parquet の race_id と直接一致する
+        - race_id_str: str 16 桁（int64 を str() 変換したもの。features_*.parquet の race_id と一致）
         - (h1, h2): _norm_pair() で正規化（小さい馬番が先頭）
         - odds: float（100円あたりの払戻倍率）
 
     除外条件
     --------
-    - odds_status != "ok" の行
+    - odds_status != "ok" の行（発売前取消・発売後取消を除外）
     - odds が NaN の行
     - CSV ファイルが存在しない年（警告を出してスキップ）
     """
     lookup: dict[str, dict[PAIR_KEY, float]] = {}
     for year in years:
-        path = odds_dir / f"WideOdds_{year}.csv"
+        path = odds_dir / f"{odds_type}Odds_{year}.csv"
         if not path.exists():
-            print(f"  [warn] WideOdds_{year}.csv not found, skipping")
+            print(f"  [warn] {odds_type}Odds_{year}.csv not found, skipping")
             continue
         df = pd.read_csv(path)
         # odds_status フィルタ・NaN フィルタ（ベット可能なオッズのみ）
@@ -97,50 +98,7 @@ def _build_wide_odds_lookup(
         # レースごとに辞書を構築（同一ペアが複数スナップショット存在する場合は最後の値を採用）
         for rid, grp in df.groupby("race_id_str"):
             lookup[rid] = dict(zip(grp["pair_key"], grp["odds"].astype(float)))
-    print(f"  WideOdds loaded: {len(lookup):,} races across {years}")
-    return lookup
-
-
-def _build_quinella_odds_lookup(
-    years: list[int],
-    odds_dir: Path,
-) -> dict[str, dict[PAIR_KEY, float]]:
-    """QuinellaOdds_YYYY.csv を複数年読み込み、race_id -> {(h1,h2): odds} の辞書を返す。
-
-    Parameters
-    ----------
-    years : テストセットの年リスト
-    odds_dir : QuinellaOdds CSV が格納されたディレクトリ
-
-    Returns
-    -------
-    dict[race_id_str, dict[(h1,h2), odds]]
-        - race_id_str: str 16桁（int64 を str() 変換したもの。features_*.parquet の race_id と一致）
-        - (h1, h2): _norm_pair() で正規化（小さい馬番が先頭）
-        - odds: float（事前オッズ）
-
-    除外条件
-    --------
-    - odds_status != "ok" の行（発売前取消・発売後取消を除外）
-    - odds が NaN の行
-    - CSV ファイルが存在しない年（警告を出してスキップ）
-    """
-    lookup: dict[str, dict[PAIR_KEY, float]] = {}
-    for year in years:
-        path = odds_dir / f"QuinellaOdds_{year}.csv"
-        if not path.exists():
-            print(f"  [warn] QuinellaOdds_{year}.csv not found, skipping")
-            continue
-        df = pd.read_csv(path)
-        df = df[(df["odds_status"] == "ok") & df["odds"].notna()].copy()
-        df["race_id_str"] = df["race_id"].apply(lambda x: str(int(x)))
-        df["h_min"] = df[["horse_num_1", "horse_num_2"]].min(axis=1).astype(int)
-        df["h_max"] = df[["horse_num_1", "horse_num_2"]].max(axis=1).astype(int)
-        df["pair_key"] = list(zip(df["h_min"], df["h_max"]))
-        # 同一ペアに複数スナップショットが存在する場合は最後の値を採用
-        for rid, grp in df.groupby("race_id_str"):
-            lookup[rid] = dict(zip(grp["pair_key"], grp["odds"].astype(float)))
-    print(f"  QuinellaOdds loaded: {len(lookup):,} races across {years}")
+    print(f"  {odds_type}Odds loaded: {len(lookup):,} races across {years}")
     return lookup
 
 
@@ -184,7 +142,9 @@ def _collect_bets_per_race(
     wide_lookup = _build_hr_lookup(hr_df, "wide")
     quin_lookup = _build_hr_lookup(hr_df, "quinella")
 
-    # 馬連: WideOdds CSV に含まれないため HR 払戻平均を参照値として継続使用
+    # 馬連フォールバック払戻平均:
+    # quinella_odds_lookup=None で呼び出された場合（後方互換パス）に EV 計算の参照値として使用する。
+    # quinella_odds_lookup が提供される通常パスでは参照されない。
     quin_ref_payout = float(hr_df[hr_df["bet_type"] == "quinella"]["payout"].mean())
 
     rows: list[dict] = []
@@ -640,10 +600,10 @@ def main() -> None:
     test_years = sorted(df_test["race_date"].dt.year.unique().tolist())
     odds_dir = PROJECT_ROOT / "common" / "data" / "output" / "odds"
     print(f"\nLoading WideOdds for years: {test_years}")
-    wide_odds_lookup = _build_wide_odds_lookup(test_years, odds_dir)
+    wide_odds_lookup = _build_odds_lookup(test_years, odds_dir, "Wide")
 
     print(f"\nLoading QuinellaOdds for years: {test_years}")
-    quinella_odds_lookup = _build_quinella_odds_lookup(test_years, odds_dir)
+    quinella_odds_lookup = _build_odds_lookup(test_years, odds_dir, "Quinella")
 
     feature_cols = get_feature_cols(df_test, cfg)
     models = load_models(models_dir)
