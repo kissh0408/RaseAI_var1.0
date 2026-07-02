@@ -286,6 +286,14 @@ def _build_hist_features(df: pd.DataFrame) -> pd.DataFrame:
         lambda x: x.shift(1).expanding().mean()
     )
 
+    # ─── 脚質コード過去走平均（直近3走） ─────────────────────────────────────────
+    # running_style_code: 1=逃げ, 2=先行, 3=差し, 4=追込
+    # NOTE: hist_front_running_pref（全期間2値）と pearson r=-0.79 の高相関（Phase-A 検証済み）
+    # v33_jt_ext では未採用（高冗長性のため）。v36_course テストで -0.21pp 確認済み。
+    df["hist_running_style_avg3"] = grp_horse["running_style_code"].transform(
+        lambda x: x.shift(1).rolling(3, min_periods=1).mean()
+    )
+
     # ─── 先行傾向（running_style_code は過去走の値。shift(1) で当該レース除外） ───
     # running_style_code: 1=逃げ, 2=先行, 3=差し, 4=追込 / 先行系 = {1, 2}
     df["_is_front_runner"] = df["running_style_code"].isin([1, 2]).astype(np.int8)
