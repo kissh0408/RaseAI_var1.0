@@ -21,7 +21,7 @@
     "reg_alpha": 1.0,
     "reg_lambda": 2.0,
     "learning_rate": 0.05,
-    "n_estimators": 500
+    "n_estimators": 800
   },
   "training": {
     "seeds": [
@@ -47,7 +47,7 @@
     "preprocessed_dir": "pure_rank/data/01_preprocessed",
     "features_dir": "pure_rank/data/02_features",
     "models_dir": "pure_rank/models",
-    "features_version": "v29_fixed",
+    "features_version": "v33_jt_ext",
     "hc_dir": "C:/Users/syugo/AI/RaceAI_var1.0/common/data/output/slop_hc",
     "wc_dir": "C:/Users/syugo/AI/RaceAI_var1.0/common/data/output/wood_wc",
     "hr_dir": "C:/Users/syugo/AI/RaceAI/common/data/output/race_hr"

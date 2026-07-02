@@ -149,6 +149,7 @@ def _build_hist_features(df: pd.DataFrame) -> pd.DataFrame:
     df["hist_avg_rank_5"] = grp_horse["finish_rank"].transform(
         lambda x: x.shift(1).rolling(5, min_periods=1).mean()
     )
+
     df["hist_win_rate"] = grp_horse["is_win"].transform(
         lambda x: x.shift(1).expanding().mean()
     )
@@ -285,6 +286,14 @@ def _build_hist_features(df: pd.DataFrame) -> pd.DataFrame:
         lambda x: x.shift(1).expanding().mean()
     )
 
+    # ─── 脚質コード過去走平均（直近3走） ─────────────────────────────────────────
+    # running_style_code: 1=逃げ, 2=先行, 3=差し, 4=追込
+    # NOTE: hist_front_running_pref（全期間2値）と pearson r=-0.79 の高相関（Phase-A 検証済み）
+    # v33_jt_ext では未採用（高冗長性のため）。v36_course テストで -0.21pp 確認済み。
+    df["hist_running_style_avg3"] = grp_horse["running_style_code"].transform(
+        lambda x: x.shift(1).rolling(3, min_periods=1).mean()
+    )
+
     # ─── 先行傾向（running_style_code は過去走の値。shift(1) で当該レース除外） ───
     # running_style_code: 1=逃げ, 2=先行, 3=差し, 4=追込 / 先行系 = {1, 2}
     df["_is_front_runner"] = df["running_style_code"].isin([1, 2]).astype(np.int8)
@@ -293,7 +302,9 @@ def _build_hist_features(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # 一時列を削除
-    df = df.drop(columns=["_time_dev", "_is_top_grade", "_dist_bin_100", "_rank_top_grade", "_is_front_runner"])
+    df = df.drop(columns=[
+        "_time_dev", "_is_top_grade", "_dist_bin_100", "_rank_top_grade", "_is_front_runner",
+    ])
     return df
 
 
@@ -679,6 +690,62 @@ def _build_jockey_trainer_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.merge(
         ts_daily[["trainer_code", "surface_code", "race_date", "hist_trainer_surface_win_rate"]],
         on=["trainer_code", "surface_code", "race_date"],
+        how="left",
+    )
+
+    # ─── Step J-5: 騎手×馬場種別 通算勝率（cumulative + shift(1)） ────────────────
+    # 芝・ダート適性は安定した長期特性のため cumulative を採用する。
+    js_daily = (
+        df.groupby(["jockey_code", "surface_code", "race_date"], observed=True)
+        .agg(d_wins=("is_win", "sum"), d_races=("is_win", "count"))
+        .reset_index()
+        .sort_values(["jockey_code", "surface_code", "race_date"])
+        .reset_index(drop=True)
+    )
+    grp_js = js_daily.groupby(["jockey_code", "surface_code"], observed=True)
+    js_daily["cum_wins"]       = grp_js["d_wins"].cumsum()
+    js_daily["cum_races"]      = grp_js["d_races"].cumsum()
+    js_daily["cum_wins_prev"]  = grp_js["cum_wins"].shift(1)
+    js_daily["cum_races_prev"] = grp_js["cum_races"].shift(1)
+    js_daily["hist_jockey_surface_win_rate_ts"] = (
+        js_daily["cum_wins_prev"] / js_daily["cum_races_prev"]
+    )
+    js_daily.loc[
+        js_daily["cum_races_prev"] < MIN_JOCKEY_RACES,
+        "hist_jockey_surface_win_rate_ts",
+    ] = np.nan
+
+    df = df.merge(
+        js_daily[["jockey_code", "surface_code", "race_date", "hist_jockey_surface_win_rate_ts"]],
+        on=["jockey_code", "surface_code", "race_date"],
+        how="left",
+    )
+
+    # ─── Step T-5: 調教師×競馬場 通算勝率（cumulative + shift(1)） ────────────────
+    # コース適性は安定した長期特性のため cumulative を採用する。
+    tc_daily = (
+        df.groupby(["trainer_code", "course_code", "race_date"], observed=True)
+        .agg(d_wins=("is_win", "sum"), d_races=("is_win", "count"))
+        .reset_index()
+        .sort_values(["trainer_code", "course_code", "race_date"])
+        .reset_index(drop=True)
+    )
+    grp_tc = tc_daily.groupby(["trainer_code", "course_code"], observed=True)
+    tc_daily["cum_wins"]       = grp_tc["d_wins"].cumsum()
+    tc_daily["cum_races"]      = grp_tc["d_races"].cumsum()
+    tc_daily["cum_wins_prev"]  = grp_tc["cum_wins"].shift(1)
+    tc_daily["cum_races_prev"] = grp_tc["cum_races"].shift(1)
+    tc_daily["hist_trainer_course_win_rate_ts"] = (
+        tc_daily["cum_wins_prev"] / tc_daily["cum_races_prev"]
+    )
+    tc_daily.loc[
+        tc_daily["cum_races_prev"] < MIN_TRAINER_RACES,
+        "hist_trainer_course_win_rate_ts",
+    ] = np.nan
+
+    df = df.merge(
+        tc_daily[["trainer_code", "course_code", "race_date", "hist_trainer_course_win_rate_ts"]],
+        on=["trainer_code", "course_code", "race_date"],
         how="left",
     )
 
