@@ -1,0 +1,220 @@
+{
+  "model_version": "v33_jt_ext",
+  "overall": {
+    "top1_rate": 0.303665,
+    "n_races": 4775
+  },
+  "by_surface_code": {
+    "1": {
+      "top1_rate": 0.297662,
+      "n_races": 2224,
+      "label": "芝",
+      "gap_vs_overall": -0.006003
+    },
+    "2": {
+      "top1_rate": 0.311345,
+      "n_races": 2380,
+      "label": "ダート",
+      "gap_vs_overall": 0.00768
+    },
+    "5": {
+      "top1_rate": 0.274854,
+      "n_races": 171,
+      "label": "その他",
+      "gap_vs_overall": -0.028811
+    }
+  },
+  "by_track_condition_code": {
+    "0": {
+      "top1_rate": 0.264151,
+      "n_races": 106,
+      "label": "不明",
+      "gap_vs_overall": -0.039514
+    },
+    "1": {
+      "top1_rate": 0.295836,
+      "n_races": 3458,
+      "label": "良",
+      "gap_vs_overall": -0.007829
+    },
+    "2": {
+      "top1_rate": 0.333333,
+      "n_races": 834,
+      "label": "稍重",
+      "gap_vs_overall": 0.029668
+    },
+    "3": {
+      "top1_rate": 0.314189,
+      "n_races": 296,
+      "label": "重",
+      "gap_vs_overall": 0.010524
+    },
+    "4": {
+      "top1_rate": 0.345679,
+      "n_races": 81,
+      "label": "不良",
+      "gap_vs_overall": 0.042014,
+      "warning": "n<100"
+    }
+  },
+  "by_distance_category": {
+    "0": {
+      "top1_rate": 0.277015,
+      "n_races": 1675,
+      "label": "短距離(~1400m)",
+      "gap_vs_overall": -0.02665
+    },
+    "1": {
+      "top1_rate": 0.323881,
+      "n_races": 2010,
+      "label": "マイル(1401-1800m)",
+      "gap_vs_overall": 0.020216
+    },
+    "2": {
+      "top1_rate": 0.301238,
+      "n_races": 727,
+      "label": "中距離(1801-2200m)",
+      "gap_vs_overall": -0.002427
+    },
+    "3": {
+      "top1_rate": 0.319559,
+      "n_races": 363,
+      "label": "長距離(2201m+)",
+      "gap_vs_overall": 0.015894
+    }
+  },
+  "by_horse_count_bucket": {
+    "13-16": {
+      "top1_rate": 0.287202,
+      "n_races": 2977,
+      "label": "13-16",
+      "gap_vs_overall": -0.016463
+    },
+    "17+": {
+      "top1_rate": 0.256532,
+      "n_races": 421,
+      "label": "17+",
+      "gap_vs_overall": -0.047133
+    },
+    "5-8": {
+      "top1_rate": 0.415162,
+      "n_races": 277,
+      "label": "5-8",
+      "gap_vs_overall": 0.111498
+    },
+    "9-12": {
+      "top1_rate": 0.338182,
+      "n_races": 1100,
+      "label": "9-12",
+      "gap_vs_overall": 0.034517
+    }
+  },
+  "by_grade_code": {
+    "1": {
+      "top1_rate": 0.311623,
+      "n_races": 3562,
+      "label": "1",
+      "gap_vs_overall": 0.007958
+    },
+    "2-4": {
+      "top1_rate": 0.5,
+      "n_races": 14,
+      "label": "2-4",
+      "gap_vs_overall": 0.196335,
+      "warning": "n<100"
+    },
+    "5": {
+      "top1_rate": 0.277929,
+      "n_races": 1101,
+      "label": "5",
+      "gap_vs_overall": -0.025736
+    },
+    "7": {
+      "top1_rate": 0.27551,
+      "n_races": 98,
+      "label": "7",
+      "gap_vs_overall": -0.028155,
+      "warning": "n<100"
+    }
+  },
+  "by_course_code": {
+    "1": {
+      "top1_rate": 0.317365,
+      "n_races": 167,
+      "label": "1",
+      "gap_vs_overall": 0.0137
+    },
+    "10": {
+      "top1_rate": 0.232376,
+      "n_races": 383,
+      "label": "10",
+      "gap_vs_overall": -0.071289
+    },
+    "2": {
+      "top1_rate": 0.409722,
+      "n_races": 144,
+      "label": "2",
+      "gap_vs_overall": 0.106057
+    },
+    "3": {
+      "top1_rate": 0.224359,
+      "n_races": 312,
+      "label": "3",
+      "gap_vs_overall": -0.079306
+    },
+    "4": {
+      "top1_rate": 0.3125,
+      "n_races": 384,
+      "label": "4",
+      "gap_vs_overall": 0.008835
+    },
+    "5": {
+      "top1_rate": 0.348966,
+      "n_races": 725,
+      "label": "5",
+      "gap_vs_overall": 0.045301
+    },
+    "6": {
+      "top1_rate": 0.320562,
+      "n_races": 783,
+      "label": "6",
+      "gap_vs_overall": 0.016897
+    },
+    "7": {
+      "top1_rate": 0.299349,
+      "n_races": 461,
+      "label": "7",
+      "gap_vs_overall": -0.004316
+    },
+    "8": {
+      "top1_rate": 0.278296,
+      "n_races": 751,
+      "label": "8",
+      "gap_vs_overall": -0.025369
+    },
+    "9": {
+      "top1_rate": 0.312782,
+      "n_races": 665,
+      "label": "9",
+      "gap_vs_overall": 0.009117
+    }
+  },
+  "worst_conditions": [
+    {
+      "axis": "course_code",
+      "value": "3",
+      "label": "3",
+      "top1_rate": 0.224359,
+      "n_races": 312,
+      "gap_vs_overall": -0.079306
+    },
+    {
+      "axis": "course_code",
+      "value": "10",
+      "label": "10",
+      "top1_rate": 0.232376,
+      "n_races": 383,
+      "gap_vs_overall": -0.071289
+    }
+  ]
+}
