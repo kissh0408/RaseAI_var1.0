@@ -47,7 +47,7 @@
     "preprocessed_dir": "pure_rank/data/01_preprocessed",
     "features_dir": "pure_rank/data/02_features",
     "models_dir": "pure_rank/models",
-    "features_version": "v33_jt_ext",
+    "features_version": "v39_course_slim",
     "hc_dir": "C:/Users/syugo/AI/RaceAI_var1.0/common/data/output/slop_hc",
     "wc_dir": "C:/Users/syugo/AI/RaceAI_var1.0/common/data/output/wood_wc",
     "hr_dir": "C:/Users/syugo/AI/RaceAI/common/data/output/race_hr"
@@ -121,6 +121,12 @@
       1.4,
       1.5
     ],
-    "T_search_fine_step": 0.02
+    "T_search_fine_step": 0.02,
+    "lam2_opt": 0.83,
+    "lam3_opt": 0.7,
+    "lam_fit_train_valid_end": "2024-12-31",
+    "lam_fit_n_races": 33945,
+    "lam2_log_likelihood": -2.109612,
+    "lam3_log_likelihood": -2.136626
   }
 }

@@ -16,32 +16,113 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import pandas as pd
 
-# ─── パス解決 ──────────────────────────────────────────────────────────────────
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-CONFIG_PATH = PROJECT_ROOT / "pure_rank" / "config" / "train_config.json"
+# パス解決・設定読み込み・禁止列定義は common.py に一元化
+from common import FORBIDDEN_MARKET_COLS, PROJECT_ROOT, get_feature_cols, load_config
 
 
-def load_config() -> dict:
-    with open(CONFIG_PATH, encoding="utf-8") as f:
-        return json.load(f)
+# ─── コース形態定数テーブル（v39_course 実験1 → v39_course_slim） ────────────────
+# 出典仕様書: docs/specs/2026-07-03-d1-course-features-design.md セクション3
+# JRA 公表の公知情報（直線長 [m]）。市場情報ではなくチューニング対象でもないため
+# train_config.json ではなくモジュール定数として定義する。
+# 値: (芝直線[内], 芝直線[外] or None, ダート直線)
+#
+# v39_course_slim（evaluator 差し戻し再実験）:
+#   v39_course の3列中 course_straight_len / course_is_small が15モデルで split=0 の
+#   dead weight だったため、出力列は front_pref_x_small の1列のみに削減した。
+#   course_is_small はその計算用の中間変数としてのみ生成し parquet には出力しない。
+#   COURSE_GEOMETRY 定数と track_code 判別に関する定数は実験記録として残す
+#   （evaluator 指示: コード内に残してよいが parquet には出さない）。
+COURSE_GEOMETRY: dict[int, tuple[float, float | None, float]] = {
+    1:  (266.1, None,  264.3),   # 札幌
+    2:  (262.1, None,  260.3),   # 函館
+    3:  (292.0, None,  295.7),   # 福島
+    4:  (358.7, 658.7, 353.9),   # 新潟
+    5:  (525.9, None,  501.6),   # 東京
+    6:  (310.0, 310.0, 308.0),   # 中山
+    7:  (412.5, None,  410.7),   # 中京
+    8:  (328.4, 403.7, 329.1),   # 京都
+    9:  (356.5, 473.6, 352.7),   # 阪神
+    10: (293.0, None,  291.3),   # 小倉
+}
+
+# 小回りコース: 「芝直線長 < 300m」という幾何情報のみに基づく固定定義
+# （札幌・函館・福島・小倉。テスト成績を見て場を選んだものではない）
+SMALL_COURSE_CODES: frozenset[int] = frozenset({1, 2, 3, 10})
+
+# 芝外回りを示す track_code（12=左外, 18=右外）。新潟・中山・京都・阪神で出現
+OUTER_TRACK_CODES: frozenset[int] = frozenset({12, 18})
+
+# 芝・直線コース（新潟1000m）。直線長 = レース距離そのもの
+STRAIGHT_TRACK_CODE: int = 10
+
+# v40_waku（実験2）: 枠×コース超過勝率セルの最小累積観測数。
+# これ未満のセルは S/N 比が低くノイズになるため NaN とし、
+# LightGBM の欠損値分岐に処理を委ねる（MIN_JOCKEY_RACES と同じ流儀）。
+# 仕様書: docs/specs/2026-07-03-d1-course-features-design.md セクション4 実験2
+MIN_WAKU_SAMPLES: int = 50
+
+# ─── 輸送距離カテゴリ定数（v45_transport, 候補4） ────────────────────────────────
+# 仕様書: docs/specs/2026-07-05-summer-racing-structural-features-design.md
+#   セクション2 候補4・セクション6
+# region_code（東西所属コード。JV-Data.md #2301。SEレコード、オフセット85、1桁）:
+#   0=下記以外/未整備（主に地方競馬・海外国際レース）, 1=関東(美浦), 2=関西(栗東),
+#   3=地方招待, 4=外国招待
+# course_code（開催競馬場。COURSE_GEOMETRY と同一採番。1=札幌...10=小倉）
+#
+# 3カテゴリ（0=近郊/輸送負担小, 1=中距離, 2=長距離/輸送負担大）は
+# トレセン所在地（美浦=茨城県・関東、栗東=滋賀県・関西）と競馬場所在地の
+# 実際の地理的関係のみに基づき固定する。学習期間データを見て境界を調整しない
+# （後出し調整の禁止。COURSE_GEOMETRY と同じ「地理的事実のみ」の流儀）。
+#
+# 関東(美浦)所属馬:
+#   近郊(0)  = 東京・中山（同一都市圏、実質輸送負担なし）
+#   中距離(1) = 福島・新潟・中京・京都・阪神（本州内、数百km規模）
+#   長距離(2) = 札幌・函館（北海道、海峡越え）・小倉（九州、本州外れの最遠隔）
+# 関西(栗東)所属馬:
+#   近郊(0)  = 中京・京都・阪神（同一地域ブロック）
+#   中距離(1) = 福島・新潟・東京・中山・小倉（本州/九州本土内、数百km規模）
+#   長距離(2) = 札幌・函館（北海道、海峡越え。関西からは関東所属より更に遠い）
+# 地方招待(3)・外国招待(4)・未整備(0扱いの馬):
+#   標準的な美浦/栗東所属体系の外からの遠征であるため、開催地によらず一律
+#   長距離(2) とする（サンプルは全体の約0.16%と極小。実測は生成ログで確認する）
+TRANSPORT_MAP: dict[tuple[int, int], int] = {}
+for _c in (5, 6):
+    TRANSPORT_MAP[(1, _c)] = 0
+for _c in (3, 4, 7, 8, 9):
+    TRANSPORT_MAP[(1, _c)] = 1
+for _c in (1, 2, 10):
+    TRANSPORT_MAP[(1, _c)] = 2
+for _c in (7, 8, 9):
+    TRANSPORT_MAP[(2, _c)] = 0
+for _c in (3, 4, 5, 6, 10):
+    TRANSPORT_MAP[(2, _c)] = 1
+for _c in (1, 2):
+    TRANSPORT_MAP[(2, _c)] = 2
+for _region in (0, 3, 4):
+    for _c in range(1, 11):
+        TRANSPORT_MAP[(_region, _c)] = 2
+del _c, _region
+
+
+def _transport_category(region_code: pd.Series, course_code: pd.Series) -> pd.Series:
+    """region_code × course_code から輸送距離カテゴリ（0=近郊/1=中距離/2=長距離）を導出する。
+
+    TRANSPORT_MAP に存在しない組み合わせ（未知の region_code 等）は NaN とする。
+    """
+    keys = list(zip(region_code.astype("int64"), course_code.astype("int64")))
+    values = [TRANSPORT_MAP.get(k, np.nan) for k in keys]
+    return pd.Series(values, index=region_code.index, dtype="float64")
 
 
 # ─── 市場情報混入チェック ───────────────────────────────────────────────────────
-FORBIDDEN_COLS = {
-    "odds", "popularity", "win_odds", "place_odds",
-    "quinella_odds", "market_prob", "market_log_odds",
-    "init_score", "ninki",
-}
-
 
 def _check_no_market_features(df: pd.DataFrame) -> None:
     """DataFrame に市場情報列が含まれていないことを確認する。"""
-    found = FORBIDDEN_COLS & set(df.columns)
+    found = FORBIDDEN_MARKET_COLS & set(df.columns)
     if found:
         raise ValueError(
             f"[FORBIDDEN] 市場情報が特徴量に混入しています: {sorted(found)}\n"
@@ -66,10 +147,14 @@ def _load_data(cfg: dict) -> pd.DataFrame:
     print(f"  SK: {len(sk):,} rows, {len(sk.columns)} cols")
 
     # SE + RA を race_id でマージ（RA の距離・馬場情報を SE に付加）
+    # weight_type: v44_handicap（候補3: ハンデ戦フラグ）の生成元列。
+    # common.py の FORBIDDEN_COLS でメタ列として除外済み（市場情報ではない。
+    # docs/specs/2026-07-05-summer-racing-structural-features-design.md セクション2
+    # 候補3参照）。_build_current_features で is_handicap_race 導出後に drop する。
     ra_merge_cols = [
         "race_id", "grade_code", "distance", "track_code", "horse_count",
         "weather_code", "surface_code", "track_condition_code",
-        "surface_condition", "distance_category", "race_date",
+        "surface_condition", "distance_category", "race_date", "weight_type",
     ]
     # RA には race_date が既にある。SE の race_date と同一のはずだが RA のものを使う
     se = se.drop(columns=["race_date"], errors="ignore")
@@ -77,10 +162,36 @@ def _load_data(cfg: dict) -> pd.DataFrame:
 
     df = se.merge(ra_subset, on="race_id", how="inner")
 
+    # mining_predicted_rank: v42_mining（Phase 6）専用の生列。
+    # 他バージョンでは main() 内で version != "v42_mining" のとき早期に drop する
+    # （既存バージョンの列数アサートに影響させないため）。
     # SK（血統）をマージ
     sk_cols = ["ketto_num", "sire_id", "bms_id"]
     sk_subset = sk[[c for c in sk_cols if c in sk.columns]].copy()
     df = df.merge(sk_subset, on="ketto_num", how="left")
+
+    # region_code: v45_transport（候補4: 輸送距離カテゴリ）の生成元列。
+    # pure_rank/data/01_preprocessed/SE_preprocessed.parquet には region_code が
+    # 含まれていない（pure_rank/src/preprocess.py の _SE_SOURCE_COLS 未収録）ため、
+    # var2.0.0 側の軽量な SE_preprocessed.parquet（同一の race_id×ketto_num キー、
+    # 行数一致・重複なしを実装時に確認済み）から race_id×ketto_num で直接マージする。
+    # pure_rank の 01_preprocessed 資産（他バージョンの再現性に影響する共有ファイル）
+    # 自体は変更しない。region_code は common.py の FORBIDDEN_COLS でメタ列除外対象
+    # のため、_build_current_features で transport_category 導出後に drop する
+    # （weight_type → is_handicap_race と同じ「派生列に一本化して drop」の流儀）。
+    # 仕様書: docs/specs/2026-07-05-summer-racing-structural-features-design.md
+    #   セクション2 候補4・セクション6
+    n_before_region = len(df)
+    src_se_path = Path(cfg["data"]["src_parquet_dir"]) / "SE_preprocessed.parquet"
+    src_se = pd.read_parquet(src_se_path, columns=["race_id", "ketto_num", "region_code"])
+    src_se["race_id"] = src_se["race_id"].astype(str)
+    src_se["ketto_num"] = src_se["ketto_num"].astype(str)
+    df["ketto_num"] = df["ketto_num"].astype(str)
+    df = df.merge(src_se, on=["race_id", "ketto_num"], how="left")
+    assert len(df) == n_before_region, (
+        f"region_code マージで行数が変化しています（ファンアウト検出）: "
+        f"{n_before_region:,} → {len(df):,}"
+    )
 
     print(f"  Merged: {len(df):,} rows, {len(df.columns)} cols")
     return df
@@ -112,6 +223,42 @@ def _apply_filters(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
 
     print(f"  Filter applied: {n_before:,} → {len(df):,} rows "
           f"(removed {n_before - len(df):,})")
+    return df
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SECTION 2.5: COURSE GEOMETRY INTERMEDIATE (v39_course_slim)
+# コースの物理形態（公知情報）に基づく中間変数。レース前確定情報でありリークと無関係。
+# v39_course_slim では course_is_small を front_pref_x_small の計算用中間変数として
+# のみ生成し、parquet には出力しない（_build_current_features で使用後に drop）。
+# course_straight_len の出力は v39_course で split=0 の dead weight と判定され廃止
+# （track_code による内/外回り判別ロジックは v39_course の実装記録として git 履歴に残る）。
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _build_course_geometry_features(df: pd.DataFrame) -> pd.DataFrame:
+    """コース形態の中間変数を生成する。
+
+    生成列（すべて中間変数。最終 parquet には含めない）:
+    - course_is_small: 芝直線長 < 300m の小回り4場（札幌・函館・福島・小倉）フラグ。
+      front_pref_x_small の計算にのみ使用し、_build_current_features 内で drop する。
+
+    仕様書: docs/specs/2026-07-03-d1-course-features-design.md セクション3・4（実験1）
+    + evaluator 差し戻し指示（v39_course_slim: 出力は front_pref_x_small 1列のみ）
+    """
+    # track_code の分布確認ログ（想定外コードの検出用）。
+    # 既知の懸念: 芝コード 20〜22 は preprocess.py の surface_code = track_code // 10
+    # によりダート扱いになる。実測ではフィルタ後 2 レースのみで影響は無視できる。
+    print("  track_code value_counts (rows):")
+    vc = df["track_code"].value_counts().sort_index()
+    for code, cnt in vc.items():
+        print(f"    track_code={code}: {cnt:,}")
+
+    df["course_is_small"] = (
+        df["course_code"].astype(int).isin(SMALL_COURSE_CODES).astype(np.int8)
+    )
+
+    n_small = int(df["course_is_small"].sum())
+    print(f"  course_is_small=1 (中間変数): {n_small:,} rows ({n_small / len(df):.1%})")
     return df
 
 
@@ -178,10 +325,13 @@ def _build_hist_features(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # ─── 馬場条件別 最速タイム ──────────────────────────────────────────────────
-    # 同距離帯×同馬場種別×同馬場状態での過去最速タイム（shift(1) で当該レース除外）
+    # 同実距離×同馬場種別×同馬場状態での過去最速タイム（shift(1) で当該レース除外）
+    # NOTE: distance_category だと同カテゴリ内の実距離差（例: 1000m と 1400m で
+    # 20秒超）が生タイムに混入し疑似信号化するため、実距離でグループ化する
+    # （2026-06-30 の速度指数バグ修正と同じ根拠。A-2 で distance 化を採用）
     df["hist_best_time_same_cond"] = (
         df.groupby(
-            ["ketto_num", "distance_category", "surface_code", "track_condition_code"]
+            ["ketto_num", "distance", "surface_code", "track_condition_code"]
         )["racetime"].transform(
             lambda x: x.shift(1).expanding().min()
         )
@@ -214,6 +364,10 @@ def _build_hist_features(df: pd.DataFrame) -> pd.DataFrame:
             lambda x: x.shift(1).expanding().mean()
         )
     )
+    # v39_course: hist_track_size_win_rate（馬×コースサイズのプーリング勝率）は
+    # 相関ゲートで hist_win_rate と r=+0.851（>= 0.7）となり不採用。
+    # 仕様書（docs/specs/2026-07-03-d1-course-features-design.md 実験1）の例外規定
+    # 「|r| >= 0.7 なら本列のみ落として3列で学習」に従い実装しない。
 
     # ─── 状態系 ───────────────────────────────────────────────────────────────
     # diff() は current - previous なので shift 不要（current - prev は過去情報）
@@ -286,14 +440,6 @@ def _build_hist_features(df: pd.DataFrame) -> pd.DataFrame:
         lambda x: x.shift(1).expanding().mean()
     )
 
-    # ─── 脚質コード過去走平均（直近3走） ─────────────────────────────────────────
-    # running_style_code: 1=逃げ, 2=先行, 3=差し, 4=追込
-    # NOTE: hist_front_running_pref（全期間2値）と pearson r=-0.79 の高相関（Phase-A 検証済み）
-    # v33_jt_ext では未採用（高冗長性のため）。v36_course テストで -0.21pp 確認済み。
-    df["hist_running_style_avg3"] = grp_horse["running_style_code"].transform(
-        lambda x: x.shift(1).rolling(3, min_periods=1).mean()
-    )
-
     # ─── 先行傾向（running_style_code は過去走の値。shift(1) で当該レース除外） ───
     # running_style_code: 1=逃げ, 2=先行, 3=差し, 4=追込 / 先行系 = {1, 2}
     df["_is_front_runner"] = df["running_style_code"].isin([1, 2]).astype(np.int8)
@@ -313,8 +459,14 @@ def _build_hist_features(df: pd.DataFrame) -> pd.DataFrame:
 # 当該レースの固定情報。リーク防止不要（レース前に観測可能な情報）。
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _build_current_features(df: pd.DataFrame) -> pd.DataFrame:
-    """当該レースの現状情報特徴量を生成する。"""
+def _build_current_features(df: pd.DataFrame, version: str = "") -> pd.DataFrame:
+    """当該レースの現状情報特徴量を生成する。
+
+    version: "v44_handicap" のときのみ is_handicap_race（候補3: ハンデ戦フラグ）、
+             "v45_transport" のときのみ transport_category（候補4: 輸送距離
+             カテゴリ）を追加する。他バージョンでは生成せず、既存バージョンの
+             列数を変えない（1変更1実験の原則）。
+    """
     # 季節 × 性別スコア: cos(2π × day_of_year/365) × sex_sign
     # sex_sign: 牝馬(sex_code=2)=+1, 牡馬(1)・騸馬(3)=-1
     day_of_year = df["race_date"].dt.dayofyear
@@ -326,6 +478,16 @@ def _build_current_features(df: pd.DataFrame) -> pd.DataFrame:
     surface_sign = df["surface_code"].map({1: 1, 2: -1}).fillna(0).astype(float)
     df["wakuban_surface"] = df["wakuban"].astype(float) * surface_sign
 
+    # v39_course_slim: 小回り × 先行傾向 交互作用。
+    # 直線の短いコースでは先行馬が残りやすい物理バイアスを積として明示する
+    # （depth-2 分割でも表現可能だが、LambdaRank の相対勾配では積の方が発見が容易）。
+    # hist_front_running_pref が NaN（新馬）なら NaN のまま（fillna しない）。
+    df["front_pref_x_small"] = (
+        df["hist_front_running_pref"] * df["course_is_small"].astype(float)
+    )
+    # course_is_small は中間変数（evaluator 指示: parquet に出力しない）。使用後に drop
+    df = df.drop(columns=["course_is_small"])
+
     # ─── フィールド強度（SECTION 3完了後に依存） ─────────────────────────────────
     # 新馬(hist_win_rate=NaN)は 0 として fillna してから groupby で平均を取る
     df["_hist_win_rate_filled"] = df["hist_win_rate"].fillna(0)
@@ -335,6 +497,200 @@ def _build_current_features(df: pd.DataFrame) -> pd.DataFrame:
     df["prize_vs_field"] = df["hist_avg_prize_3"] - df["field_avg_prize"]
     df = df.drop(columns=["_hist_win_rate_filled"])
 
+    # v44_handicap（候補3）: ハンデ戦フラグ。
+    # weight_type（重量種別コード。docs/JV-Data.md #2008.重量種別コード）:
+    #   1=ハンデ, 2=別定, 3=馬齢, 4=定量, 0=未設定・未整備（主に地方/海外）。
+    # コード値は目視憶測ではなく、学習期間データの実測（burden_weight のレース内
+    # 標準偏差・レンジが weight_type=1 で最大: std=1.51/range=5.08、他コードは
+    # std<=1.32/range<=3.83）と、weight_type=1 のレースが grade_code 1/2/3
+    # （G1/G2/G3）に一切出現しない（実際の JRA 運用でも重賞はほぼ別定/馬齢で
+    # 施行されハンデはほぼ皆無という既知の事実と整合）ことの両方で確定した。
+    # レース番組情報として出走前確定（市場情報ではない）。
+    if version == "v44_handicap":
+        vc = df["weight_type"].value_counts(dropna=False).sort_index()
+        print(f"  weight_type value_counts (行ベース):\n{vc.to_string()}")
+        df["is_handicap_race"] = (df["weight_type"] == 1).astype("int8")
+        col = df["is_handicap_race"]
+        print(f"  is_handicap_race: 1(ハンデ)の割合 {col.mean():.2%} (n={len(col):,})")
+
+    # weight_type 自体は common.py の FORBIDDEN_COLS でメタ列除外対象。
+    # is_handicap_race 生成用の中間ソースとしてのみ使い、生列は parquet に残さない
+    # （v42_mining の mining_predicted_rank と同じ「派生列に一本化して drop」の流儀）。
+    df = df.drop(columns=["weight_type"], errors="ignore")
+
+    # v45_transport（候補4）: 輸送距離カテゴリ。
+    # region_code（東西所属コード。_load_data() で var2.0.0 の SE_preprocessed.parquet
+    # から race_id×ketto_num でマージ済み）× course_code から TRANSPORT_MAP
+    # （地理的事実に基づく固定マッピング。モジュール定数として定義済み）を引く。
+    # 馬の恒常的な所属情報（レース結果に非依存）と開催地（レース前確定）の
+    # 組み合わせのため時系列リークはない。
+    if version == "v45_transport":
+        vc = df["region_code"].value_counts(dropna=False).sort_index()
+        print(f"  region_code value_counts (行ベース):\n{vc.to_string()}")
+        df["transport_category"] = _transport_category(
+            df["region_code"], df["course_code"]
+        ).astype("int8")
+        col = df["transport_category"]
+        print(f"  transport_category value_counts (0=近郊/1=中距離/2=長距離):\n"
+              f"{col.value_counts(dropna=False).sort_index().to_string()}")
+        print(f"  transport_category: NaN率 {col.isna().mean():.2%} (n={len(col):,})")
+
+    # region_code 自体は common.py の FORBIDDEN_COLS でメタ列除外対象。
+    # transport_category 生成用の中間ソースとしてのみ使い、生列は parquet に残さない
+    # （weight_type → is_handicap_race と同じ「派生列に一本化して drop」の流儀）。
+    df = df.drop(columns=["region_code"], errors="ignore")
+
+    return df
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SECTION 4.5: WAKU COURSE BIAS (v40_waku 実験2)
+# コース×馬場×距離帯×枠番の「枠有利不利」を過去の実結果から時系列推定する。
+# 仕様書: docs/specs/2026-07-03-d1-course-features-design.md セクション4 実験2
+# （仕様書では v39_waku 表記。v39 は course_slim が採用済みのため v40_waku に読み替え）
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _build_waku_bias_features(df: pd.DataFrame) -> pd.DataFrame:
+    """枠×コースの時系列超過勝率 hist_waku_course_bias_ts を生成する。
+
+    - 集計キー: (course_code, surface_code, distance_category, wakuban)
+    - 集計値: 超過勝率 = is_win − 1/horse_count の累積平均。
+      頭数によってベースレート 1/n が変わるため、生の勝率ではなく
+      期待値との差を使う（8頭立ての勝利と18頭立ての勝利を同列に扱わない）
+    - リーク防止: 日次集計 → cumsum → shift(1) → merge
+      （Step J-4 hist_jockey_course_win_rate と完全同型。同日の他レース結果を含めない）
+    - 累積観測数 < MIN_WAKU_SAMPLES のセルは NaN
+    """
+    keys = ["course_code", "surface_code", "distance_category", "wakuban"]
+
+    wk_daily = (
+        df.assign(_excess=df["is_win"] - 1.0 / df["horse_count"].astype(float))
+        .groupby(keys + ["race_date"], observed=True)
+        .agg(d_excess=("_excess", "sum"), d_races=("_excess", "count"))
+        .reset_index()
+        .sort_values(keys + ["race_date"])
+        .reset_index(drop=True)
+    )
+    grp_wk = wk_daily.groupby(keys, observed=True)
+    wk_daily["cum_excess"]      = grp_wk["d_excess"].cumsum()
+    wk_daily["cum_races"]       = grp_wk["d_races"].cumsum()
+    wk_daily["cum_excess_prev"] = grp_wk["cum_excess"].shift(1)
+    wk_daily["cum_races_prev"]  = grp_wk["cum_races"].shift(1)
+    wk_daily["hist_waku_course_bias_ts"] = (
+        wk_daily["cum_excess_prev"] / wk_daily["cum_races_prev"]
+    )
+    wk_daily.loc[
+        wk_daily["cum_races_prev"] < MIN_WAKU_SAMPLES,
+        "hist_waku_course_bias_ts",
+    ] = np.nan
+
+    # セル数の確認ログ（仕様書見込み: 最大 640 セル。存在しない組み合わせは正常）
+    print(f"  waku bias cells (course×surface×dist_cat×waku): {grp_wk.ngroups:,}")
+
+    df = df.merge(
+        wk_daily[keys + ["race_date", "hist_waku_course_bias_ts"]],
+        on=keys + ["race_date"],
+        how="left",
+    )
+
+    col = df["hist_waku_course_bias_ts"]
+    print(f"  hist_waku_course_bias_ts: NaN率 {col.isna().mean():.1%}, "
+          f"mean {col.mean():+.5f}, std {col.std():.5f}, "
+          f"min {col.min():+.5f}, max {col.max():+.5f}")
+    return df
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SECTION 4.6: MINING FEATURES (v42_mining 実験1・Phase 6)
+# JRA公式データマイニング予想（0B13, race_se.mining_predicted_rank）の着順予想順位。
+# 仕様書: docs/specs/2026-07-04-phase6-jra-mining-design.md セクション2
+# 当該レースの発走前に JRA が確定・公開する事前予想値であり、過去走の集計値ではないため
+# shift(1) は不要（むしろ shift すると前走のマイニング予想を誤って使うことになり不適切）。
+# 1変更1実験の原則（仕様書2章）: mining_uncertainty 等の派生特徴量は v42 実験1では追加しない。
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _build_mining_features(df: pd.DataFrame) -> pd.DataFrame:
+    """mining_pred_rank（JRAマイニング予想順位）を1列だけ追加する。
+
+    1=予想最速、horse_count=予想最遅。0/欠損は preprocess.py 側で既に NaN 化済み。
+    生の元列 mining_predicted_rank は出力しない（mining_pred_rank に一本化して drop）。
+    """
+    df["mining_pred_rank"] = df["mining_predicted_rank"].astype(float)
+
+    col = df["mining_pred_rank"]
+    print(f"  mining_pred_rank: 非欠損率 {col.notna().mean():.2%}, "
+          f"mean {col.mean():.3f}, std {col.std():.3f}, "
+          f"min {col.min():.1f}, max {col.max():.1f}")
+
+    # リーク簡易チェック（仕様書0-2節・2章）:
+    # mining_pred_rank=1 の実際勝率が 100% ではないこと（事前予想が時々外れる健全なデータか）
+    top1 = df[df["mining_pred_rank"] == 1.0]
+    if len(top1) > 0:
+        win_rate = top1["is_win"].mean()
+        print(f"  [leak check] mining_pred_rank=1 の実際勝率: {win_rate:.2%} "
+              f"(n={len(top1):,}. 100%に近い場合はリーク疑いにつき即座に停止)")
+        if win_rate > 0.9:
+            raise RuntimeError(
+                f"[LEAK SUSPECTED] mining_pred_rank=1 の実際勝率が {win_rate:.2%} と"
+                f"異常に高すぎます。100%はレース結果のコピーである強い疑いです。"
+                f"即座に停止し evaluator へ報告してください。"
+            )
+
+    # 生の元列は出力しない
+    df = df.drop(columns=["mining_predicted_rank"])
+    return df
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SECTION 5.75: PACE INTERACTION (v41_pace 実験3・D-1 最終実験)
+# 自馬を除いたレース内の先行傾向密度と、自馬の先行傾向の交互作用。
+# 仕様書: docs/specs/2026-07-03-d1-course-features-design.md セクション4 実験3
+# （仕様書表記は v39_pace。v39/v40 は既に使用済みのため v41_pace に読み替える）
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# センタリング定数 c（生成実行時に main() で計算しログ・manifest に記録する）
+PACE_CENTER_CONST: dict[str, float] = {}
+
+
+def _build_pace_interaction_features(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """front_pref_x_pace = hist_front_running_pref × (自馬除外先行密度 − c) を生成する。
+
+    - 自馬除外密度 density_others: レース内の他馬の pref_filled 平均。
+      pref_filled = hist_front_running_pref.fillna(0)（新馬は 0 として扱う）。
+      効率的な自馬除外計算: (race_sum − 自馬 pref_filled) / (horse_count − 1)
+      （既存 field_front_runner_density は自馬を含む全馬平均であり、これとは別物）
+    - センタリング定数 c: 学習+バリデーション期間（race_date <= valid_end。
+      本プロジェクトの train_config.json では 2024-12-31）の density_others の平均。
+      テスト期間（2025+）を含めずに算出し、値をログに記録する
+      （Phase A 教訓の直接適用: センタリングなしの素朴な積は自己相関成分により
+      hist_front_running_pref と r > 0.9 になることがほぼ確実。自馬除外で自己相関を消し、
+      センタリングで積の符号を反転可能にすることで相関を落とす）
+    - hist_front_running_pref が NaN（新馬）なら本列も NaN のまま（fillna しない）
+    """
+    valid_end = pd.Timestamp(cfg["training"]["valid_end"])
+
+    df["_pref_filled_pace"] = df["hist_front_running_pref"].fillna(0)
+    race_sum = df.groupby("race_id")["_pref_filled_pace"].transform("sum")
+    density_others = (
+        (race_sum - df["_pref_filled_pace"])
+        / (df["horse_count"].astype(float) - 1.0)
+    )
+
+    # センタリング定数 c: 学習+バリデーション期間のみ（テスト期間 2025+ は含めない）
+    train_valid_mask = df["race_date"] <= valid_end
+    c = float(density_others[train_valid_mask].mean())
+    PACE_CENTER_CONST["c"] = c
+    print(f"  front_pref_x_pace centering constant c = {c:.6f} "
+          f"(race_date <= {valid_end.date()}, train+valid combined, "
+          f"n={int(train_valid_mask.sum()):,})")
+
+    df["front_pref_x_pace"] = df["hist_front_running_pref"] * (density_others - c)
+    df = df.drop(columns=["_pref_filled_pace"])
+
+    col = df["front_pref_x_pace"]
+    print(f"  front_pref_x_pace: NaN率 {col.isna().mean():.1%}, "
+          f"mean {col.mean():+.5f}, std {col.std():.5f}, "
+          f"min {col.min():+.5f}, max {col.max():+.5f}")
     return df
 
 
@@ -344,13 +700,17 @@ def _build_current_features(df: pd.DataFrame) -> pd.DataFrame:
 # 日次集計 → 累積 → shift(1) でリーク防止済み。
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _build_sire_features(df: pd.DataFrame) -> pd.DataFrame:
+def _build_sire_features(df: pd.DataFrame, version: str = "") -> pd.DataFrame:
     """父馬・母父産駒の成績を時系列正確版で計算する。
 
     アプローチ: 日次集計 → 累積 → shift(1) → メイン df にマージ
     理由: 同一 sire_id の産駒が同日複数レースに出走しうるため、
          ketto_num 単位の shift(1) では同日他産駒の結果が混入する。
          日次集計後に shift(1) することで当日を含まない累計を保証する。
+
+    version: "v43_sire_tc" のときのみ hist_sire_track_condition_win_rate_ts
+             （候補2: 父×馬場状態別勝率）を追加する。他バージョンでは生成せず、
+             既存バージョンの列数を変えない（1変更1実験の原則）。
     """
     # 産駒数が少ない父馬（新種牡馬等）の累積勝率はS/N比が低くノイズになるため、
     # cum_races_prev < MIN_SIRE_RACES の場合は NaN を設定し、
@@ -362,6 +722,8 @@ def _build_sire_features(df: pd.DataFrame) -> pd.DataFrame:
         for col in ["hist_sire_win_rate_ts", "hist_sire_surface_win_rate_ts",
                     "hist_sire_dist_win_rate_ts", "hist_sire_dist_diff"]:
             df[col] = np.nan
+        if version == "v43_sire_tc":
+            df["hist_sire_track_condition_win_rate_ts"] = np.nan
     else:
         # ── 通算勝率（sire × race_date） ──────────────────────────────────────
         sire_daily = (
@@ -408,6 +770,39 @@ def _build_sire_features(df: pd.DataFrame) -> pd.DataFrame:
             on=["sire_id", "surface_code", "race_date"], how="left"
         )
 
+        # ── 同馬場状態勝率（sire × track_condition_code × race_date） ────────────
+        # 候補2（v43_sire_tc、docs/specs/2026-07-05-summer-racing-structural-features
+        # -design.md セクション2 候補2）: hist_sire_surface_win_rate_ts と全く同じ
+        # 日次集計→cumsum→shift(1)パターンで、キーを surface_code → track_condition_code
+        # に置換したもの。track_condition_code=0（不明）もキーに含めて計算し、
+        # 結果は NaN 扱いで問題ない（他バージョンとの1変更1実験を守るため
+        # version == "v43_sire_tc" のときのみ生成する）。
+        if version == "v43_sire_tc":
+            sire_tc = (
+                df.groupby(["sire_id", "track_condition_code", "race_date"], observed=True)
+                .agg(d_wins=("is_win", "sum"), d_races=("is_win", "count"))
+                .reset_index()
+                .sort_values(["sire_id", "track_condition_code", "race_date"])
+            )
+            grp_stc = sire_tc.groupby(["sire_id", "track_condition_code"], observed=True)
+            sire_tc["cum_wins"]  = grp_stc["d_wins"].cumsum()
+            sire_tc["cum_races"] = grp_stc["d_races"].cumsum()
+            sire_tc["cum_wins_prev"]  = grp_stc["cum_wins"].shift(1)
+            sire_tc["cum_races_prev"] = grp_stc["cum_races"].shift(1)
+            sire_tc["hist_sire_track_condition_win_rate_ts"] = (
+                sire_tc["cum_wins_prev"] / sire_tc["cum_races_prev"]
+            )
+            # 産駒データが少ない場合のNaNマスク（ノイズ抑制、MIN_SIRE_RACES を共通利用）
+            sire_tc.loc[
+                sire_tc["cum_races_prev"] < MIN_SIRE_RACES,
+                "hist_sire_track_condition_win_rate_ts"
+            ] = np.nan
+            df = df.merge(
+                sire_tc[["sire_id", "track_condition_code", "race_date",
+                          "hist_sire_track_condition_win_rate_ts"]],
+                on=["sire_id", "track_condition_code", "race_date"], how="left"
+            )
+
         # ── 同距離帯勝率（sire × distance_category × race_date） ─────────────────
         sire_dist = (
             df.groupby(["sire_id", "distance_category", "race_date"], observed=True)
@@ -431,18 +826,58 @@ def _build_sire_features(df: pd.DataFrame) -> pd.DataFrame:
             on=["sire_id", "distance_category", "race_date"], how="left"
         )
 
-        # ── 父産駒の平均勝ち距離との差（全期間統計、距離適性は安定のため許容） ─────
-        sire_wins = df[df["is_win"] == 1]
-        if len(sire_wins) > 0:
-            sire_avg_dist = (
-                sire_wins.groupby("sire_id", observed=True)["distance"]
-                .mean()
-                .reset_index()
-                .rename(columns={"distance": "_sire_avg_win_dist"})
+        # ── 父産駒の平均勝ち距離との差（時系列累積版・当日除外） ────────────────
+        # 旧実装は全期間（テスト期間含む）の勝利で平均勝ち距離を計算しており
+        # Rule 2（時系列リーク防止）違反だった（課題 A-1）。
+        # 他の _ts 特徴量と同じ「日次集計 → cumsum → shift(1)」パターンに置換。
+        win_dist_daily = (
+            df[df["is_win"] == 1]
+            .groupby(["sire_id", "race_date"], observed=True)
+            .agg(d_dist_sum=("distance", "sum"), d_wins=("distance", "count"))
+            .reset_index()
+            .sort_values(["sire_id", "race_date"])
+        )
+        if len(win_dist_daily) > 0:
+            grp_w = win_dist_daily.groupby("sire_id", observed=True)
+            win_dist_daily["cum_dist"] = grp_w["d_dist_sum"].cumsum()
+            win_dist_daily["cum_wins"] = grp_w["d_wins"].cumsum()
+            # shift(1) で「その勝利日より前」の累積平均にする（当日勝利を除外）
+            win_dist_daily["avg_win_dist_prev"] = (
+                grp_w["cum_dist"].shift(1) / grp_w["cum_wins"].shift(1)
             )
-            df = df.merge(sire_avg_dist, on="sire_id", how="left")
-            df["hist_sire_dist_diff"] = (df["distance"] - df["_sire_avg_win_dist"]).abs()
-            df = df.drop(columns=["_sire_avg_win_dist"])
+            # 勝利日ベースの sparse な系列なので、メイン df へは merge_asof(backward)
+            # で「当該レース日より前の最新値」を引き当てる。
+            # merge_asof(backward) は当日ちょうどの right 行も拾うが、shift(1) 済み
+            # のため同日一致でも当日結果は混入しない。設計意図（当該レース日より
+            # 前の情報のみを参照する）を保証するため、right 側キーを +1 日ずらして
+            # 当日行とのマッチ自体を排除する。
+            win_dist_daily["asof_date"] = (
+                win_dist_daily["race_date"] + pd.Timedelta(days=1)
+            )
+            right = (
+                win_dist_daily[["sire_id", "asof_date", "avg_win_dist_prev"]]
+                # merge_asof は right が on キーでグローバルソート済みであることを要求
+                .sort_values("asof_date", kind="stable")
+                .reset_index(drop=True)
+            )
+            left = (
+                df[["sire_id", "race_date"]]
+                .reset_index()  # 元の行位置を保持して後で並び順を戻す
+                .sort_values("race_date", kind="stable")
+            )
+            # sire_id 欠損行は by キーでマッチしないため NaN のままになる（許容）
+            merged = pd.merge_asof(
+                left,
+                right,
+                left_on="race_date",
+                right_on="asof_date",
+                by="sire_id",
+                direction="backward",
+            )
+            merged = merged.set_index("index").sort_index()
+            df["hist_sire_dist_diff"] = (
+                df["distance"] - merged["avg_win_dist_prev"]
+            ).abs()
         else:
             df["hist_sire_dist_diff"] = np.nan
 
@@ -1118,17 +1553,17 @@ def _add_training_features(
 def _build_labels(df: pd.DataFrame) -> pd.DataFrame:
     """LambdaRank / Binary 用ラベルを生成する。
 
-    label_gain = [0, 1, 3, 7, 15, 31, 63]（7エントリ）の制約上、
-    ラベルは 0〜6 の範囲に収める必要がある。
+    label_gain（7エントリ。具体値は train_config.json の model.label_gain を参照）
+    の制約上、ラベルは 0〜6 の範囲に収める必要がある。
 
-    着順 → ラベル対応:
-        1着 → 6 (gain=63, 最高)
-        2着 → 5 (gain=31)
-        3着 → 4 (gain=15)
-        4着 → 3 (gain=7)
-        5着 → 2 (gain=3)
-        6着 → 1 (gain=1)
-        7着以下 → 0 (gain=0, 全て同等)
+    着順 → ラベル対応（gain 値は config の label_gain[label] が適用される）:
+        1着 → 6 (最高)
+        2着 → 5
+        3着 → 4
+        4着 → 3
+        5着 → 2
+        6着 → 1
+        7着以下 → 0 (全て同等)
 
     公式: label = clip(7 - finish_rank, 0, 6)
     頭数に依存せず、着順のみで決まる絶対ラベル方式を採用する。
@@ -1156,11 +1591,96 @@ def _report_nan_rates(df: pd.DataFrame, threshold: float = 0.3) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# SECTION 8.5: 相関ゲート（新規特徴量の採用前チェック）
+# 仕様書 docs/specs/2026-07-03-d1-course-features-design.md セクション2.2・7-4:
+# - 学習+バリデーション期間（race_date <= valid_end）の行のみで計算（2025+ は使わない）
+# - 新列 × 既存特徴量列の Pearson |r| >= 0.7 が1つでもあれば学習に進まない
+# - 新列とレース内 is_win 相関（リーク簡易チェック。目安 |r| < 0.15）
+# evaluator 申し送り: 実測値を必ず生成ログに数値として出力する（コメント記載のみは不可）
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# 相関ゲート対象の新規列（features_version ごとに定義。
+# v40_waku は実験2の追加列。v39_course_slim では front_pref_x_small が対象
+# （採用済みだが再生成時のチェックとして残す））
+NEW_FEATURE_COLS_BY_VERSION: dict[str, list[str]] = {
+    "v39_course_slim": ["front_pref_x_small"],
+    "v40_waku": ["hist_waku_course_bias_ts"],
+    "v41_pace": ["front_pref_x_pace"],
+    "v42_mining": ["mining_pred_rank"],
+    "v43_sire_tc": ["hist_sire_track_condition_win_rate_ts"],
+    "v44_handicap": ["is_handicap_race"],
+    "v45_transport": ["transport_category"],
+}
+
+CORR_GATE_THRESHOLD: float = 0.7      # |r| >= 0.7 → 学習に進まず planner へ報告
+INRACE_ISWIN_GUIDE: float = 0.15      # レース内 is_win 相関の目安（超過は警告）
+
+
+def _run_correlation_gate(df: pd.DataFrame, cfg: dict, new_cols: list[str]) -> None:
+    """新規特徴量の相関ゲートを実測し、結果をログに出力する。
+
+    ゲート違反（既存列と |r| >= 0.7）があれば RuntimeError を送出し、
+    parquet を保存せずに終了する（学習に進ませないため）。
+    """
+    valid_end = pd.Timestamp(cfg["training"]["valid_end"])
+    sub = df[df["race_date"] <= valid_end]
+    print(f"  対象期間: race_date <= {valid_end.date()} ({len(sub):,} rows)")
+
+    feature_cols = get_feature_cols(df, cfg)
+    violations: list[tuple[str, str, float]] = []
+
+    for nc in new_cols:
+        others = [c for c in feature_cols if c != nc]
+        # category dtype 等が混じっても Pearson を計算できるよう数値列に限定する
+        others_num = sub[others].select_dtypes(include=[np.number])
+        corr = others_num.corrwith(sub[nc].astype(float)).dropna()
+        corr_abs = corr.abs().sort_values(ascending=False)
+
+        print(f"\n  [{nc}] vs 既存 {len(corr)} 列の Pearson 相関（上位5件）:")
+        for col in corr_abs.head(5).index:
+            print(f"    r = {corr[col]:+.4f}  {col}")
+        over = corr_abs[corr_abs >= CORR_GATE_THRESHOLD]
+        if len(over) > 0:
+            for col in over.index:
+                violations.append((nc, col, float(corr[col])))
+        print(f"    → max|r| = {corr_abs.iloc[0]:.4f} "
+              f"({'NG: >= ' if corr_abs.iloc[0] >= CORR_GATE_THRESHOLD else 'OK: < '}"
+              f"{CORR_GATE_THRESHOLD})")
+
+        # レース内 is_win 相関（レース内で demean した within 相関）
+        s = sub[["race_id", "is_win", nc]].dropna(subset=[nc])
+        if len(s) > 0:
+            d_feat = s[nc] - s.groupby("race_id")[nc].transform("mean")
+            d_win = s["is_win"] - s.groupby("race_id")["is_win"].transform("mean")
+            r_inrace = float(d_feat.corr(d_win))
+        else:
+            r_inrace = float("nan")
+        status = "OK" if abs(r_inrace) < INRACE_ISWIN_GUIDE else "警告: 目安超過"
+        print(f"    レース内 is_win 相関: r = {r_inrace:+.4f} "
+              f"({status}, 目安 |r| < {INRACE_ISWIN_GUIDE})")
+
+    if violations:
+        lines = "\n".join(
+            f"  {nc} vs {col}: r = {r:+.4f}" for nc, col, r in violations
+        )
+        raise RuntimeError(
+            f"[相関ゲート NG] |r| >= {CORR_GATE_THRESHOLD} の既存列があります。"
+            f"学習に進まず planner へ報告してください:\n{lines}"
+        )
+    print("\n  相関ゲート: 全列 PASS")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 9: マニフェスト保存
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _save_manifest(df: pd.DataFrame, out_dir: Path, version: str) -> None:
-    """特徴量ファイルのメタ情報を manifest.json として保存する。"""
+    """特徴量ファイルのメタ情報を manifest_{version}.json として保存する。
+
+    固定名 manifest.json への上書きは廃止した（実験版の生成で本番メタ情報が
+    消える事故を防ぐため）。本番のメタ情報を参照するときは
+    train_config.json の features_version に対応する manifest_{version}.json を読むこと。
+    """
     n = len(df)
     manifest = {
         "version": version,
@@ -1178,7 +1698,16 @@ def _save_manifest(df: pd.DataFrame, out_dir: Path, version: str) -> None:
             if df[col].isnull().any()
         },
     }
-    manifest_path = out_dir / "manifest.json"
+    if version == "v41_pace" and "c" in PACE_CENTER_CONST:
+        manifest["pace_center_const"] = {
+            "c": PACE_CENTER_CONST["c"],
+            "definition": (
+                "front_pref_x_pace のセンタリング定数。学習+バリデーション期間"
+                "（race_date <= training.valid_end）の自馬除外先行密度の平均。"
+                "テスト期間（2025+）は含まない。"
+            ),
+        }
+    manifest_path = out_dir / f"manifest_{version}.json"
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)
     print(f"  manifest saved: {manifest_path}")
@@ -1203,20 +1732,44 @@ def main() -> None:
     print("\n[1] Loading preprocessed data...")
     df = _load_data(cfg)
 
+    # mining_predicted_rank は v42_mining（Phase 6）専用の生列。
+    # 他バージョンでは既存の列数アサートに影響させないため早期に drop する。
+    if version != "v42_mining" and "mining_predicted_rank" in df.columns:
+        df = df.drop(columns=["mining_predicted_rank"])
+
     print("\n[2] Applying filters...")
     df = _apply_filters(df, cfg)
 
     # 市場情報混入チェック
     _check_no_market_features(df)
 
+    # merge によるファンアウト（キー重複での行数増加）検出用
+    n_after_filter = len(df)
+
+    print("\n[2.5] Building course geometry intermediate (v39_course_slim)...")
+    df = _build_course_geometry_features(df)
+
     print("\n[3] Building historical features (shift-1 leak prevention)...")
     df = _build_hist_features(df)
 
     print("\n[4] Building current race features...")
-    df = _build_current_features(df)
+    df = _build_current_features(df, version)
+
+    # v40_waku（実験2）は Top-1 ゲート不通過で不採用（30.14% <= 30.24%）。
+    # 実験記録として実装は残し、features_version = v40_waku のときのみ生成する
+    # （現行採用バージョン v39_course_slim の再生成では 132列を維持するため）。
+    if version == "v40_waku":
+        print("\n[4.5] Building waku course bias features (v40_waku)...")
+        df = _build_waku_bias_features(df)
+
+    # v42_mining（Phase 6実験1）: JRA公式マイニング予想順位を1列だけ追加。
+    # features_version = v42_mining のときのみ生成する（v39_course_slim の132列を維持するため）。
+    if version == "v42_mining":
+        print("\n[4.6] Building mining prediction features (v42_mining)...")
+        df = _build_mining_features(df)
 
     print("\n[5] Building bloodline features...")
-    df = _build_sire_features(df)
+    df = _build_sire_features(df, version)
 
     print("\n[5.5] Building jockey/trainer features...")
     df = _build_jockey_trainer_features(df)
@@ -1227,6 +1780,12 @@ def main() -> None:
     print("\n[5.7] Building relative features (field_z_*, pace index)...")
     df = _build_relative_features(df)
 
+    # v41_pace（実験3・D-1 最終実験）front_pref 系が揃った段階（hist_front_running_pref
+    # 生成済み・relative_features 完了後）で計算する。他バージョン再生成時は生成しない。
+    if version == "v41_pace":
+        print("\n[5.75] Building pace interaction features (v41_pace)...")
+        df = _build_pace_interaction_features(df, cfg)
+
     print("\n[6] Building training features (HC/WC)...")
     hc = _load_hc(cfg)
     wc = _load_wc(cfg)
@@ -1235,12 +1794,165 @@ def main() -> None:
     print("\n[7] Building labels (lr_label)...")
     df = _build_labels(df)
 
+    # merge のキー重複による行数増加（ファンアウト）がないことを保証
+    assert len(df) == n_after_filter, (
+        f"行数が merge で変化しています: filter後 {n_after_filter:,} → 現在 {len(df):,}"
+    )
+
     # 最終的な市場情報混入チェック
     _check_no_market_features(df)
 
     # NaN 率レポート
     print("\n[8] NaN rate report:")
     _report_nan_rates(df, threshold=0.3)
+
+    # 相関ゲート（|r| >= 0.7 で RuntimeError → 保存せず終了）
+    print("\n[8.2] Correlation gate for new features:")
+    _run_correlation_gate(df, cfg, NEW_FEATURE_COLS_BY_VERSION.get(version, []))
+
+    # 最終列数の保証（バージョン別）。
+    # 中間変数（course_is_small）の drop 漏れ・course_straight_len の混入も検出する
+    if version == "v39_course_slim":
+        assert len(df.columns) == 132, (
+            f"v39_course_slim は 132 列（131 + front_pref_x_small）のはずですが "
+            f"{len(df.columns)} 列あります: 差分を確認してください"
+        )
+        assert "hist_waku_course_bias_ts" not in df.columns, (
+            "hist_waku_course_bias_ts は v40_waku 専用です（実験2は不採用）"
+        )
+        assert "course_is_small" not in df.columns, "中間変数 course_is_small が残っています"
+        assert "course_straight_len" not in df.columns, "course_straight_len は出力禁止です"
+        print(f"\n[8.3] Column count assert PASS: {len(df.columns)} == 132")
+    elif version == "v40_waku":
+        assert len(df.columns) == 133, (
+            f"v40_waku は 133 列（132 + hist_waku_course_bias_ts）のはずですが "
+            f"{len(df.columns)} 列あります: 差分を確認してください"
+        )
+        assert "hist_waku_course_bias_ts" in df.columns, "hist_waku_course_bias_ts がありません"
+        assert "course_is_small" not in df.columns, "中間変数 course_is_small が残っています"
+        assert "course_straight_len" not in df.columns, "course_straight_len は出力禁止です"
+        print(f"\n[8.3] Column count assert PASS: {len(df.columns)} == 133")
+    elif version == "v41_pace":
+        assert len(df.columns) == 133, (
+            f"v41_pace は 133 列（132 + front_pref_x_pace）のはずですが "
+            f"{len(df.columns)} 列あります: 差分を確認してください"
+        )
+        assert "front_pref_x_pace" in df.columns, "front_pref_x_pace がありません"
+        assert "front_pref_x_small" in df.columns, (
+            "front_pref_x_small（v39_course_slim ベース）が失われています"
+        )
+        assert "hist_waku_course_bias_ts" not in df.columns, (
+            "hist_waku_course_bias_ts は v40_waku 専用です（実験2は不採用）"
+        )
+        assert "course_is_small" not in df.columns, "中間変数 course_is_small が残っています"
+        assert "course_straight_len" not in df.columns, "course_straight_len は出力禁止です"
+        print(f"\n[8.3] Column count assert PASS: {len(df.columns)} == 133")
+    elif version == "v42_mining":
+        assert len(df.columns) == 133, (
+            f"v42_mining は 133 列（132 + mining_pred_rank）のはずですが "
+            f"{len(df.columns)} 列あります: 差分を確認してください"
+        )
+        assert "mining_pred_rank" in df.columns, "mining_pred_rank がありません"
+        assert "mining_predicted_rank" not in df.columns, (
+            "生の元列 mining_predicted_rank が残っています（mining_pred_rank に一本化すること）"
+        )
+        assert "front_pref_x_small" in df.columns, (
+            "front_pref_x_small（v39_course_slim ベース）が失われています"
+        )
+        assert "hist_waku_course_bias_ts" not in df.columns, (
+            "hist_waku_course_bias_ts は v40_waku 専用です（実験2は不採用）"
+        )
+        assert "front_pref_x_pace" not in df.columns, (
+            "front_pref_x_pace は v41_pace 専用です（1変更1実験の原則）"
+        )
+        assert "course_is_small" not in df.columns, "中間変数 course_is_small が残っています"
+        assert "course_straight_len" not in df.columns, "course_straight_len は出力禁止です"
+        print(f"\n[8.3] Column count assert PASS: {len(df.columns)} == 133")
+    elif version == "v43_sire_tc":
+        assert len(df.columns) == 133, (
+            f"v43_sire_tc は 133 列（132 + hist_sire_track_condition_win_rate_ts）"
+            f"のはずですが {len(df.columns)} 列あります: 差分を確認してください"
+        )
+        assert "hist_sire_track_condition_win_rate_ts" in df.columns, (
+            "hist_sire_track_condition_win_rate_ts がありません"
+        )
+        assert "front_pref_x_small" in df.columns, (
+            "front_pref_x_small（v39_course_slim ベース）が失われています"
+        )
+        assert "hist_waku_course_bias_ts" not in df.columns, (
+            "hist_waku_course_bias_ts は v40_waku 専用です（実験2は不採用）"
+        )
+        assert "front_pref_x_pace" not in df.columns, (
+            "front_pref_x_pace は v41_pace 専用です（1変更1実験の原則）"
+        )
+        assert "mining_pred_rank" not in df.columns, (
+            "mining_pred_rank は v42_mining 専用です（1変更1実験の原則）"
+        )
+        assert "course_is_small" not in df.columns, "中間変数 course_is_small が残っています"
+        assert "course_straight_len" not in df.columns, "course_straight_len は出力禁止です"
+        print(f"\n[8.3] Column count assert PASS: {len(df.columns)} == 133")
+    elif version == "v44_handicap":
+        assert len(df.columns) == 133, (
+            f"v44_handicap は 133 列（132 + is_handicap_race）のはずですが "
+            f"{len(df.columns)} 列あります: 差分を確認してください"
+        )
+        assert "is_handicap_race" in df.columns, "is_handicap_race がありません"
+        assert "weight_type" not in df.columns, (
+            "生の元列 weight_type が残っています（is_handicap_race に一本化すること。"
+            "common.py の FORBIDDEN_COLS でメタ列除外対象）"
+        )
+        assert "front_pref_x_small" in df.columns, (
+            "front_pref_x_small（v39_course_slim ベース）が失われています"
+        )
+        assert "hist_waku_course_bias_ts" not in df.columns, (
+            "hist_waku_course_bias_ts は v40_waku 専用です（実験2は不採用）"
+        )
+        assert "front_pref_x_pace" not in df.columns, (
+            "front_pref_x_pace は v41_pace 専用です（1変更1実験の原則）"
+        )
+        assert "mining_pred_rank" not in df.columns, (
+            "mining_pred_rank は v42_mining 専用です（1変更1実験の原則）"
+        )
+        assert "hist_sire_track_condition_win_rate_ts" not in df.columns, (
+            "hist_sire_track_condition_win_rate_ts は v43_sire_tc 専用です"
+            "（相関ゲートNGで不採用。1変更1実験の原則）"
+        )
+        assert "course_is_small" not in df.columns, "中間変数 course_is_small が残っています"
+        assert "course_straight_len" not in df.columns, "course_straight_len は出力禁止です"
+        print(f"\n[8.3] Column count assert PASS: {len(df.columns)} == 133")
+    elif version == "v45_transport":
+        assert len(df.columns) == 133, (
+            f"v45_transport は 133 列（132 + transport_category）のはずですが "
+            f"{len(df.columns)} 列あります: 差分を確認してください"
+        )
+        assert "transport_category" in df.columns, "transport_category がありません"
+        assert "region_code" not in df.columns, (
+            "生の元列 region_code が残っています（transport_category に一本化すること。"
+            "common.py の FORBIDDEN_COLS でメタ列除外対象）"
+        )
+        assert "front_pref_x_small" in df.columns, (
+            "front_pref_x_small（v39_course_slim ベース）が失われています"
+        )
+        assert "hist_waku_course_bias_ts" not in df.columns, (
+            "hist_waku_course_bias_ts は v40_waku 専用です（実験2は不採用）"
+        )
+        assert "front_pref_x_pace" not in df.columns, (
+            "front_pref_x_pace は v41_pace 専用です（1変更1実験の原則）"
+        )
+        assert "mining_pred_rank" not in df.columns, (
+            "mining_pred_rank は v42_mining 専用です（1変更1実験の原則）"
+        )
+        assert "hist_sire_track_condition_win_rate_ts" not in df.columns, (
+            "hist_sire_track_condition_win_rate_ts は v43_sire_tc 専用です"
+            "（相関ゲートNGで不採用。1変更1実験の原則）"
+        )
+        assert "is_handicap_race" not in df.columns, (
+            "is_handicap_race は v44_handicap 専用です（dead weightで不採用。"
+            "1変更1実験の原則）"
+        )
+        assert "course_is_small" not in df.columns, "中間変数 course_is_small が残っています"
+        assert "course_straight_len" not in df.columns, "course_straight_len は出力禁止です"
+        print(f"\n[8.3] Column count assert PASS: {len(df.columns)} == 133")
 
     # 保存前に行順序を LambdaRank グループ割り当て用に修正する。
     # 中間処理では ketto_num 順（shift(1) 効率化）を使うが、

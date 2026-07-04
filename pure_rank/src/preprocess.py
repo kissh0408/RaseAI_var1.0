@@ -45,6 +45,10 @@ _SE_SOURCE_COLS = [
     "corner_1", "corner_2", "corner_3", "corner_4",
     "hon_shokin", "fuka_shokin",
     "running_style_code",
+    # JRA公式データマイニング予想（0B13経由、race_se.mining_predicted_rank）。
+    # 市場オッズ・人気とは別の JRA 自身の予測アルゴリズム出力（Phase 6, v42_mining 実験）。
+    # 仕様書: docs/specs/2026-07-04-phase6-jra-mining-design.md
+    "mining_predicted_rank",
     # 明示的に除外: odds, popularity（市場情報）
 ]
 
@@ -97,6 +101,16 @@ def preprocess_se(src_hd: pd.DataFrame, dst_parquet: Path) -> pd.DataFrame:
     # 0 値を NaN に変換（未記録を意味する）
     df.loc[df["racetime"] <= 0, "racetime"] = np.nan
     df.loc[df["time_3f_after"] <= 0, "time_3f_after"] = np.nan
+
+    # mining_predicted_rank: JRA公式データマイニング予想の着順予想（1=予想最速、
+    # horse_count=予想最遅）。var2.0.0 側の horse_data.parquet 生成時に既に
+    # 0→NaN 変換済み（preprocessing.py 316-320行目）だが、防御的に再度実施する。
+    # 仕様書: docs/specs/2026-07-04-phase6-jra-mining-design.md 5-1節
+    if "mining_predicted_rank" in df.columns:
+        df["mining_predicted_rank"] = pd.to_numeric(
+            df["mining_predicted_rank"], errors="coerce"
+        )
+        df.loc[df["mining_predicted_rank"] <= 0, "mining_predicted_rank"] = np.nan
 
     # 保存
     dst_parquet.parent.mkdir(parents=True, exist_ok=True)

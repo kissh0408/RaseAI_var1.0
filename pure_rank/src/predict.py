@@ -16,13 +16,10 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 
-# evaluate.py の共通関数を再利用（コード重複禁止）
+# 共通関数は common.py / evaluate.py から再利用（コード重複禁止）
+from common import CONFIG_PATH, PROJECT_ROOT, get_feature_cols, load_config
 from evaluate import (
-    PROJECT_ROOT,
-    CONFIG_PATH,
     ensemble_predict,
-    get_feature_cols,
-    load_config,
     load_models,
 )
 
@@ -170,6 +167,316 @@ def compute_race_probabilities(race_scores: np.ndarray, T: float) -> dict:
         "wide_matrix": wide_matrix,
         "quinella_matrix": quinella_matrix,
     }
+
+
+# ─── Stern型（べき乗割引）確率変換 ────────────────────────────────────────────
+#
+# Harville 公式は「1着争いの確率比がそのまま2着以降にも保存される」と仮定するが、
+# 実際は下位着順ほど番狂わせが増えるため、Harville は穴馬の連対・複勝確率を
+# 系統的に過大評価する（ev_diagnosis_v2.json: 全 bin で predicted > actual、
+# 最大 16.6pp）。Stern型は「着順が下がるごとの割引率 λ」を1〜2個だけ導入し、
+# λ=1 のとき Harville に厳密に一致する（下記 stern_second_prob / stern_third_prob
+# を参照。p_j / sum_{k!=i} p_k = p_j / (1-p_i) は Harville の条件付き確率そのもの）。
+# 既存の Harville 実装（harville_place_probs / compute_race_probabilities）は
+# 削除せず併存させ、--prob-method で比較可能にする（simulate_ev.py 側）。
+
+def stern_second_prob(p: np.ndarray, winner_idx: int, lam: float) -> np.ndarray:
+    """
+    Stern型: 1着が winner_idx に確定した後の2着確率分布を返す。
+
+    q_j = p_j^lam / sum_{k != winner_idx} p_k^lam  (winner_idx 自身は 0)
+
+    lam=1 のとき q_j = p_j / (1 - p[winner_idx]) となり、Harville の
+    P(j 2着 | winner_idx 1着) と厳密に一致する。lam<1 で下位争いの番狂わせ
+    （＝上位人気馬同士の差が縮む）を表現する。
+    """
+    q = np.asarray(p, dtype=float) ** lam
+    q[winner_idx] = 0.0
+    total = q.sum()
+    n = len(p)
+    if total < _DENOM_EPS:
+        out = np.zeros(n, dtype=float)
+        remaining = [k for k in range(n) if k != winner_idx]
+        if remaining:
+            out[remaining] = 1.0 / len(remaining)
+        return out
+    return q / total
+
+
+def stern_third_prob(p: np.ndarray, first_idx: int, second_idx: int, lam: float) -> np.ndarray:
+    """
+    Stern型: 1着・2着が確定した後の3着確率分布を返す。
+
+    q_k = p_k^lam / sum_{m not in {first_idx, second_idx}} p_m^lam
+
+    lam=1 のとき Harville の P(k 3着 | first_idx 1着, second_idx 2着) と一致する。
+    2着争い（lam2）とは独立に3着争い専用の割引率 lam3 を持つ。
+    """
+    q = np.asarray(p, dtype=float) ** lam
+    q[first_idx] = 0.0
+    q[second_idx] = 0.0
+    total = q.sum()
+    n = len(p)
+    if total < _DENOM_EPS:
+        out = np.zeros(n, dtype=float)
+        remaining = [k for k in range(n) if k not in (first_idx, second_idx)]
+        if remaining:
+            out[remaining] = 1.0 / len(remaining)
+        return out
+    return q / total
+
+
+def stern_place_probs(p_win: np.ndarray, lam2: float, lam3: float) -> tuple[np.ndarray, np.ndarray]:
+    """Stern型で 2着・3着確率を計算する（harville_place_probs の一般化。lam2=lam3=1 で一致）。"""
+    p = np.asarray(p_win, dtype=float)
+    n = len(p)
+    p2 = np.zeros(n, dtype=float)
+    p3 = np.zeros(n, dtype=float)
+
+    for i in range(n):
+        second_probs = stern_second_prob(p, i, lam2)
+        for j in range(n):
+            if j == i:
+                continue
+            sp_j = second_probs[j]
+            if sp_j <= 0:
+                continue
+            p2[j] += p[i] * sp_j
+
+            third_probs = stern_third_prob(p, i, j, lam3)
+            for k in range(n):
+                if k == i or k == j:
+                    continue
+                tp_k = third_probs[k]
+                if tp_k <= 0:
+                    continue
+                p3[k] += p[i] * sp_j * tp_k
+
+    return p2, p3
+
+
+def _prob_order_123_stern(p: np.ndarray, a: int, b: int, c: int, lam2: float, lam3: float) -> float:
+    """P(a=1着, b=2着, c=3着) を Stern 型展開で計算（_prob_order_123 の一般化）。"""
+    sp = stern_second_prob(p, a, lam2)[b]
+    if sp <= 0:
+        return 0.0
+    tp = stern_third_prob(p, a, b, lam3)[c]
+    if tp <= 0:
+        return 0.0
+    return p[a] * sp * tp
+
+
+def compute_race_probabilities_stern(race_scores: np.ndarray, T: float, lam2: float, lam3: float) -> dict:
+    """1レース分のスコアを受け取り、Stern型で全確率を返す（compute_race_probabilities の一般化）。
+
+    lam2=lam3=1.0 を渡すと Harville と数値的に一致する。
+    """
+    p_win = softmax_with_temperature(race_scores, T)
+    p2, p3 = stern_place_probs(p_win, lam2, lam3)
+    p_top3 = p_win + p2 + p3
+    n = len(p_win)
+
+    quinella_matrix = np.zeros((n, n), dtype=float)
+    wide_matrix = np.zeros((n, n), dtype=float)
+
+    # 2着確率分布はペアごとに使い回すため i, j それぞれで1回だけ計算する
+    second_probs_cache = [stern_second_prob(p_win, i, lam2) for i in range(n)]
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            q_ij = p_win[i] * second_probs_cache[i][j] + p_win[j] * second_probs_cache[j][i]
+            quinella_matrix[i, j] = q_ij
+            quinella_matrix[j, i] = q_ij
+
+            w_ij = q_ij
+            for k in range(n):
+                if k == i or k == j:
+                    continue
+                w_ij += _prob_order_123_stern(p_win, i, k, j, lam2, lam3)
+                w_ij += _prob_order_123_stern(p_win, j, k, i, lam2, lam3)
+                w_ij += _prob_order_123_stern(p_win, k, i, j, lam2, lam3)
+                w_ij += _prob_order_123_stern(p_win, k, j, i, lam2, lam3)
+            wide_matrix[i, j] = w_ij
+            wide_matrix[j, i] = w_ij
+
+    return {
+        "p_win": p_win,
+        "p2": p2,
+        "p3": p3,
+        "p_top3": p_top3,
+        "wide_matrix": wide_matrix,
+        "quinella_matrix": quinella_matrix,
+    }
+
+
+# ─── λ2・λ3 のフィット（TRAIN+VALID のみ。TEST は使わない） ──────────────────
+
+def _extract_race_data(df: pd.DataFrame, predictions: np.ndarray) -> list[tuple[np.ndarray, np.ndarray]]:
+    """race_id ごとの (scores, finish_ranks) タプルのリストを返す（λ探索の高速化用キャッシュ）。"""
+    dfc = df.copy()
+    dfc["pred_score"] = predictions
+    races: list[tuple[np.ndarray, np.ndarray]] = []
+    for _, grp in dfc.groupby("race_id"):
+        if len(grp) < 2:
+            continue
+        races.append((grp["pred_score"].values, grp["finish_rank"].values))
+    return races
+
+
+def _lambda2_avg_log_likelihood(
+    races: list[tuple[np.ndarray, np.ndarray]], T: float, lam2: float
+) -> float:
+    """実際の2着馬に対する Stern型 log-likelihood の平均を返す。"""
+    losses: list[float] = []
+    for scores, ranks in races:
+        w_pos = np.where(ranks == 1)[0]
+        s_pos = np.where(ranks == 2)[0]
+        if len(w_pos) != 1 or len(s_pos) != 1:
+            continue
+        w_idx, s_idx = int(w_pos[0]), int(s_pos[0])
+        p_win = softmax_with_temperature(scores, T)
+        q2 = stern_second_prob(p_win, w_idx, lam2)
+        losses.append(float(np.log(max(q2[s_idx], 1e-15))))
+    return float(np.mean(losses)) if losses else float("-inf")
+
+
+def _lambda3_avg_log_likelihood(
+    races: list[tuple[np.ndarray, np.ndarray]], T: float, lam3: float
+) -> float:
+    """実際の1着・2着が確定した条件下での、実際の3着馬に対する log-likelihood 平均を返す。
+
+    2着争い（lam2）とは独立に、実着順（正解）を条件として3着争いのみを評価する
+    （計画書「2着が決まった後の3着争いに対して独立にλ3を推定する」に対応）。
+    """
+    losses: list[float] = []
+    for scores, ranks in races:
+        w_pos = np.where(ranks == 1)[0]
+        s_pos = np.where(ranks == 2)[0]
+        t_pos = np.where(ranks == 3)[0]
+        if len(w_pos) != 1 or len(s_pos) != 1 or len(t_pos) != 1:
+            continue
+        w_idx, s_idx, t_idx = int(w_pos[0]), int(s_pos[0]), int(t_pos[0])
+        p_win = softmax_with_temperature(scores, T)
+        q3 = stern_third_prob(p_win, w_idx, s_idx, lam3)
+        losses.append(float(np.log(max(q3[t_idx], 1e-15))))
+    return float(np.mean(losses)) if losses else float("-inf")
+
+
+def _search_lambda(
+    races: list[tuple[np.ndarray, np.ndarray]],
+    T: float,
+    ll_func,
+    coarse: list[float],
+    fine_step: float,
+    lam_bounds: tuple[float, float] = (0.5, 1.0),
+) -> tuple[float, float]:
+    """粗探索 → 細探索で λ を決定する（_search_temperature と同型のパターン）。
+
+    Returns
+    -------
+    tuple[float, float]: (lam_opt, best_log_likelihood)
+    """
+    print(f"    Coarse search over {len(coarse)} values...")
+    best_lam = float(coarse[0])
+    best_ll = float("-inf")
+    for lam in coarse:
+        ll = ll_func(races, T, float(lam))
+        if ll > best_ll:
+            best_ll = ll
+            best_lam = float(lam)
+    print(f"    Best coarse lam: {best_lam:.2f} (log-likelihood={best_ll:.4f})")
+
+    lo, hi = lam_bounds
+    fine_low = max(best_lam - 0.05, lo)
+    fine_high = min(best_lam + 0.05, hi)
+    fine_range = np.arange(fine_low, fine_high + fine_step / 2, fine_step)
+    print(f"    Fine search: [{fine_low:.2f}, {fine_high:.2f}] step={fine_step}")
+
+    best_lam_fine = best_lam
+    best_ll_fine = best_ll
+    for lam in fine_range:
+        ll = ll_func(races, T, float(lam))
+        if ll > best_ll_fine:
+            best_ll_fine = ll
+            best_lam_fine = float(lam)
+    print(f"    lam_opt: {best_lam_fine:.2f} (log-likelihood={best_ll_fine:.4f})")
+    return best_lam_fine, best_ll_fine
+
+
+def _save_lambda_opt(
+    cfg: dict, lam2_opt: float, lam3_opt: float, ll2: float, ll3: float, n_races: int
+) -> None:
+    """train_config.json の plackett_luce.lam2_opt / lam3_opt を更新する（T_opt と同じ管理方式）。"""
+    if "plackett_luce" not in cfg:
+        cfg["plackett_luce"] = {}
+    cfg["plackett_luce"]["lam2_opt"] = round(lam2_opt, 2)
+    cfg["plackett_luce"]["lam3_opt"] = round(lam3_opt, 2)
+    cfg["plackett_luce"]["lam_fit_train_valid_end"] = cfg["training"]["valid_end"]
+    cfg["plackett_luce"]["lam_fit_n_races"] = n_races
+    cfg["plackett_luce"]["lam2_log_likelihood"] = round(ll2, 6)
+    cfg["plackett_luce"]["lam3_log_likelihood"] = round(ll3, 6)
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    print(f"  Saved lam2_opt={lam2_opt:.2f}, lam3_opt={lam3_opt:.2f} to {CONFIG_PATH}")
+
+
+def run_fit_lambda(cfg: dict | None = None) -> tuple[float, float]:
+    """
+    TRAIN+VALID（race_date <= training.valid_end、2024-12-31）のみで λ2・λ3 をフィットする。
+
+    TEST（2025+）は一切参照しない（Rule 3: 後出しじゃんけん禁止）。
+    T は既存の T_opt（VALID 2024 でキャリブレーション済み）をそのまま使う。
+    """
+    if cfg is None:
+        cfg = load_config()
+
+    version = cfg["data"]["features_version"]
+    feat_path = PROJECT_ROOT / cfg["data"]["features_dir"] / f"features_{version}.parquet"
+    print(f"Loading features: {feat_path}")
+    df = pd.read_parquet(feat_path)
+
+    valid_end_ts = pd.Timestamp(cfg["training"]["valid_end"])
+    df_fit = df[df["race_date"] <= valid_end_ts].copy()
+    print(
+        f"TRAIN+VALID (race_date <= {valid_end_ts.date()}): "
+        f"{len(df_fit):,} rows, {df_fit['race_id'].nunique():,} races"
+    )
+
+    T_opt = float(cfg.get("plackett_luce", {}).get("T_opt", 1.0))
+    print(f"Using T_opt={T_opt} (already calibrated on VALID 2024, unchanged by this step)")
+
+    feature_cols = get_feature_cols(df_fit, cfg)
+    models_dir = PROJECT_ROOT / cfg["data"]["models_dir"]
+    print(f"\nLoading models from: {models_dir}")
+    models = load_models(models_dir)
+    predictions = ensemble_predict(models, df_fit[feature_cols])
+
+    races = _extract_race_data(df_fit, predictions)
+    print(f"  Usable races (>=2 horses): {len(races):,}")
+
+    pl_cfg = cfg.get("plackett_luce", {})
+    lam_coarse = pl_cfg.get(
+        "lam_search_coarse", [round(float(x), 2) for x in np.arange(0.5, 1.001, 0.05)]
+    )
+    lam_fine_step = pl_cfg.get("lam_search_fine_step", 0.01)
+
+    print("\n[lam2] Fitting on actual 2nd-place horses (given actual 1st)...")
+    lam2_opt, ll2 = _search_lambda(races, T_opt, _lambda2_avg_log_likelihood, lam_coarse, lam_fine_step)
+
+    print("\n[lam3] Fitting on actual 3rd-place horses (given actual 1st/2nd, independent of lam2)...")
+    lam3_opt, ll3 = _search_lambda(races, T_opt, _lambda3_avg_log_likelihood, lam_coarse, lam_fine_step)
+
+    _save_lambda_opt(cfg, lam2_opt, lam3_opt, ll2, ll3, len(races))
+
+    if 0.95 <= lam2_opt <= 1.05 and 0.95 <= lam3_opt <= 1.05:
+        print(
+            "\n  [NOTE] lam2/lam3 are both within [0.95, 1.05] -- Harville was already close to "
+            "optimal on this objective. This matches the roadmap's failure criterion "
+            "(docs/specs/2026-07-04-roi-improvement-roadmap.md Section 2)."
+        )
+
+    return lam2_opt, lam3_opt
 
 
 def _best_wide_pair(wide_matrix: np.ndarray) -> tuple[int, int]:
@@ -1157,11 +1464,19 @@ def main() -> None:
         action="store_true",
         help="Fit bracket-specific Isotonic calibration on validation set (2024)",
     )
+    parser.add_argument(
+        "--fit-lambda",
+        action="store_true",
+        help=(
+            "Fit Stern-type lam2/lam3 on TRAIN+VALID (<=2024-12-31) via log-likelihood "
+            "grid search and save to train_config.json.plackett_luce"
+        ),
+    )
     args = parser.parse_args()
 
     if not any([
         args.calibrate, args.eval, args.race_id,
-        args.fit_calibration, args.fit_bracket_calibration,
+        args.fit_calibration, args.fit_bracket_calibration, args.fit_lambda,
     ]):
         parser.print_help()
         sys.exit(1)
@@ -1177,6 +1492,8 @@ def main() -> None:
         run_fit_calibration(cfg)
     if args.fit_bracket_calibration:
         run_fit_bracket_calibration(cfg)
+    if args.fit_lambda:
+        run_fit_lambda(cfg)
 
 
 if __name__ == "__main__":

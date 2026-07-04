@@ -149,10 +149,21 @@ C:\Users\syugo\AI\RaceAI_var1.0\
 | Phase 3 | 血統（PED: 父適性・母父・ニックス） | >28% | — |
 | Phase 4 | 騎手・調教師（直近30日成績・コース適性） | >29% | — |
 | Phase 5 | TMタイム指数・通算賞金 | >30% | — |
-| Phase 6 | JRAマイニング予想追加（あり/なし比較） | >32% | **承認後のみ** |
+| Phase 6 | JRAマイニング予想追加（あり/なし比較） | >32% | **不合格（2026-07-04、evaluator独立検証済み）** |
 
 **参照ベースライン（Phase 7実績）**: Top-1=28.5% / NDCG@3=0.497 / Spearman=0.489  
 新しい実装はこの値を上回ることが最低条件。
+
+**現行正式ベースライン（2026-07-03 evaluator 合格）**: v39_course_slim  
+Top-1=30.24% / Top-3=61.76% / NDCG@3=0.5359 / Spearman=0.5048  
+（v33_jt_ext の 30.37% は hist_sire_dist_diff の時系列リーク混入値のため比較基準に使用禁止）
+
+**対市場ベンチマーク実測（2026-07-04、evaluator 独立検証済み）**: 同一テスト集合（4,775レース）で
+1番人気（単勝オッズ最小）の Top-1 的中率 = **32.90%**（単勝ROI=77.94%、WinOddsカバレッジ100%）。
+モデルは内部合否ルーブリックでは合格水準（Top-1>30%）だが、市場そのものには **-2.66pp 未達**。
+「Phase 7超え」と「対市場ギャップ」は別軸として扱うこと。実装: `pure_rank/src/simulate_ev.py`
+`compute_favorite_baseline`（WinOdds は `common/data/src/legacy_get_data_impl.py` の
+`fetch_win_odds_yearly()` で `race_se_*.csv` から生成。JV-Link新規接続不要、ベッティングレイヤー限定）。
 
 ---
 
@@ -176,18 +187,21 @@ C:\Users\syugo\AI\RaceAI_var1.0\
 
 ### LambdaRank（主モデル）
 
+> **単一の真実は `pure_rank/config/train_config.json`。** 以下は参考値であり、
+> 乖離した場合は config が正。パラメータ変更は planner を通し、変更後は本節も同期すること。
+
 ```python
 params = {
     "objective": "lambdarank",
     "metric": "ndcg",
     "ndcg_eval_at": [1, 3, 5],
-    "label_gain": [0, 1, 3, 7, 15, 31, 63],  # 指数的重み（上位馬重視）
-    "num_leaves": 31,           # 保守的設定（変更する場合は planner を通す）
+    "label_gain": [0, 1, 3, 7, 15, 31, 100],  # A-3採用（1着重み強化。2026-06-30）
+    "num_leaves": 63,           # Stage1採用（2026-06-30。31→63で+0.1pp）
     "min_child_samples": 50,
     "reg_alpha": 1.0,
     "reg_lambda": 2.0,
     "learning_rate": 0.05,
-    "n_estimators": 500,
+    "n_estimators": 800,        # early_stopping(50) が実効的な制御
     "seed": 42,                 # 5シードアンサンブル: 42〜46
 }
 ```
@@ -223,9 +237,10 @@ df = df[
 ### 時系列分割
 
 ```python
-TRAIN_END = '2021-12-31'
-VALID_END = '2022-12-31'
-# TEST: 2023-01-01以降
+TRAIN_END = '2023-12-31'   # config: training.train_end
+VALID_END = '2024-12-31'   # config: training.valid_end
+# TEST: 2025-01-01以降（4,775レース）
+# フォールド valid 年: 2022 / 2023 / 2024（config: training.fold_valid_years）
 ```
 
 ### 5シードアンサンブル

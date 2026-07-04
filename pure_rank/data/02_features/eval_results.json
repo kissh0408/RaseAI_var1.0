@@ -1,20 +1,20 @@
 {
   "metrics": {
-    "top1_rate": 0.3036649214659686,
-    "top3_rate": 0.6205235602094241,
-    "ndcg_at_3": 0.5384631813371021,
-    "spearman": 0.5071076825125368,
+    "top1_rate": 0.30240837696335077,
+    "top3_rate": 0.6175916230366492,
+    "ndcg_at_3": 0.5359111090046879,
+    "spearman": 0.5047892548213772,
     "n_races": 4775.0,
     "n_samples": 66020.0
   },
   "supplementary": {
-    "pred_top1_avg_actual_rank": 3.715811518324607,
-    "near_miss_rate_narrow": 0.2,
-    "top2_coverage": 0.49926701570680626,
-    "top3_coverage_rate": 0.625130890052356,
-    "wide_pair_coverage_rate": 0.29026178010471204,
-    "quinella_pair_coverage_rate": 0.13989528795811518,
-    "wide_harville_coverage_rate": 0.29026178010471204
+    "pred_top1_avg_actual_rank": 3.7135078534031414,
+    "near_miss_rate_narrow": 0.19933953767637347,
+    "top2_coverage": 0.4967539267015707,
+    "top3_coverage_rate": 0.6230366492146597,
+    "wide_pair_coverage_rate": 0.28858638743455495,
+    "quinella_pair_coverage_rate": 0.14010471204188482,
+    "wide_harville_coverage_rate": 0.28858638743455495
   },
   "baseline": {
     "top1_rate": 0.285,

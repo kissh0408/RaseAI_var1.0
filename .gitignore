@@ -26,6 +26,20 @@ pure_rank/models/*.joblib
 *_backup*.parquet
 *_backup*.txt
 
+# Model backups / experiment artifacts (B-5: 追跡除外のみ。削除判断はユーザーに委ねる)
+pure_rank/models_backup_*/
+pure_rank/models_v*_backup*/
+pure_rank/models_weighted_*/
+pure_rank/data/02_features/*_log.txt
+pure_rank/data/02_features/*.backup_*.parquet
+pure_rank/data/02_features/*.bak.parquet
+pure_rank/data/01_preprocessed/*.bak_*
+pure_rank/data/01_preprocessed/*.backup_*
+
+# main/ 当日予測パイプライン: 生成物（再取得・再実行で復元可能）は除外、コードは追跡する
+main/data/
+main/predictions/
+
 # Environment
 .env
 *.env
@@ -49,6 +63,7 @@ logs/
 # Jupyter
 .ipynb_checkpoints/
 *.ipynb
+!main/Notebook/main.ipynb
 
 # Temporary work files
 pure_rank/work/

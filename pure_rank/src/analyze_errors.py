@@ -15,12 +15,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from evaluate import load_config, load_models, ensemble_predict, get_feature_cols
-
-CONFIG_PATH = PROJECT_ROOT / "pure_rank" / "config" / "train_config.json"
+from common import PROJECT_ROOT, get_feature_cols, load_config
+from evaluate import ensemble_predict, load_models
 
 
 SURFACE_LABELS = {"1": "芝", "2": "ダート", "5": "その他"}
@@ -83,7 +81,12 @@ def main() -> None:
         gc = int(meta["grade_code"])
         gc_key = str(gc) if gc not in [2, 3, 4] else "2-4"
 
-        race_results.append({
+        # 夏季開催軸（候補1・候補2の副次評価用。race_date の月が6-9月かどうか。
+        # 特徴量ではなく評価軸の追加のため後出し選択の対象外
+        # docs/specs/2026-07-05-summer-racing-structural-features-design.md セクション4）
+        is_summer = int(pd.Timestamp(meta["race_date"]).month in (6, 7, 8, 9))
+
+        race_result = {
             "race_id": race_id,
             "is_hit": is_hit,
             "surface_code": str(int(meta["surface_code"])),
@@ -92,7 +95,14 @@ def main() -> None:
             "horse_count_bucket": hc_bucket,
             "grade_code": gc_key,
             "course_code": str(int(meta["course_code"])),
-        })
+            "is_summer": str(is_summer),
+        }
+        # ハンデ戦/非ハンデ戦の副次評価軸（v44_handicap 専用列。
+        # 他バージョンには is_handicap_race 列が存在しないため条件付きで追加。
+        # docs/specs/2026-07-05-summer-racing-structural-features-design.md セクション4）
+        if "is_handicap_race" in df_test.columns:
+            race_result["is_handicap_race"] = str(int(meta["is_handicap_race"]))
+        race_results.append(race_result)
 
     df_race = pd.DataFrame(race_results)
     n_races = len(df_race)
@@ -110,6 +120,7 @@ def main() -> None:
         "by_horse_count_bucket": {},
         "by_grade_code": {},
         "by_course_code": {},
+        "by_is_summer": {},
         "worst_conditions": [],
     }
 
@@ -138,6 +149,11 @@ def main() -> None:
     result["by_horse_count_bucket"] = analyze_axis("horse_count_bucket")
     result["by_grade_code"] = analyze_axis("grade_code")
     result["by_course_code"] = analyze_axis("course_code")
+    SUMMER_LABELS = {"0": "非夏季(1-5,10-12月)", "1": "夏季(6-9月)"}
+    result["by_is_summer"] = analyze_axis("is_summer", SUMMER_LABELS)
+    if "is_handicap_race" in df_race.columns:
+        HANDICAP_LABELS = {"0": "非ハンデ(定量/別定/馬齢)", "1": "ハンデ"}
+        result["by_is_handicap_race"] = analyze_axis("is_handicap_race", HANDICAP_LABELS)
 
     # 弱点条件の抽出（gap < -5pp かつ n >= 50）
     GAP_THRESHOLD = -0.05
@@ -171,7 +187,8 @@ def main() -> None:
     else:
         print("  (なし)")
 
-    out_path = feat_dir / "error_analysis_v33.json"
+    # バージョン別に保存する（固定名だと実験のたびに過去の分析結果が消えるため）
+    out_path = feat_dir / f"error_analysis_{version}.json"
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
     print(f"\nResults saved: {out_path}")

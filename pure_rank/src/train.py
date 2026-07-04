@@ -2,8 +2,12 @@
 train.py — RaceAI_var1.0 LambdaRank 学習スクリプト
 
 使用方法:
-    python pure_rank/src/train.py              # seed=42 のみ、fold 3 のみ
-    python pure_rank/src/train.py --ensemble   # 5 seeds × 3 folds = 15 モデル
+    python pure_rank/src/train.py              # seed=42 のみ、fold 3 のみ（動作確認用）
+    python pure_rank/src/train.py --ensemble   # 5 seeds × 3 folds = 15 モデル（本番）
+
+注意:
+    デフォルト実行（--ensemble なし）は動作確認用の簡易学習。
+    本番モデルは必ず --ensemble で 15 本すべてを学習すること。
 
 モデル保存先:
     pure_rank/models/lambdarank_fold{1,2,3}_seed{42-46}.txt
@@ -16,83 +20,16 @@ train.py — RaceAI_var1.0 LambdaRank 学習スクリプト
 from __future__ import annotations
 
 import argparse
-import json
-from pathlib import Path
-from typing import Optional
 
 import lightgbm as lgb
-import numpy as np
 import pandas as pd
 
-# ─── パス解決 ──────────────────────────────────────────────────────────────────
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-CONFIG_PATH = PROJECT_ROOT / "pure_rank" / "config" / "train_config.json"
-
-
-def load_config() -> dict:
-    with open(CONFIG_PATH, encoding="utf-8") as f:
-        return json.load(f)
-
-
-# ─── 特徴量列の選択 ────────────────────────────────────────────────────────────
-
-def get_feature_cols(df: pd.DataFrame, cfg: dict) -> list[str]:
-    """学習に使う特徴量列を返す。
-
-    ID 列・ラベル列・禁止列を除外する。
-    """
-    id_cols = set(cfg["features"]["id_cols"])
-    forbidden = {
-        # 市場情報（絶対禁止）
-        "odds", "popularity", "win_odds", "place_odds",
-        "quinella_odds", "market_prob", "market_log_odds",
-        "init_score", "ninki",
-        # 一時作業列
-        "_time_dev",
-        # RA / SE のメタ列（特徴量として不要）
-        "year", "month_day", "kai", "nichi", "race_num",
-        "horse_num", "registered_count", "finish_count",
-        "race_type_code", "weight_type", "race_condition_code",
-        "race_level", "race_age_type", "course_kubun",
-        "track_code",
-        "obstacle_mile_time_sec",
-        "dead_heat_flag", "dead_heat_count",
-        "breed_code", "region_code",
-        # 血統 ID（文字列。特徴量としては派生した win_rate 系を使う）
-        "sire_id", "bms_id",
-        # ─── レース後にしか判明しない後出し情報（特徴量にしてはならない） ───
-        # 走破タイム・上がり3F（結果。hist_ 系経由で過去走データは使用可）
-        "racetime", "time_3f_after",
-        # コーナー通過順（レース中の位置情報。結果）
-        "corner_1", "corner_2", "corner_3", "corner_4",
-        # 脚質判定（レース後判定）
-        "running_style_code",
-        # 異常区分（レース後確定）
-        "abnormal_code",
-        # 賞金（レース後確定。hist_ 系経由で過去走データは使用可）
-        "hon_shokin", "fuka_shokin",
-        # 生ラベル（全てレース後確定）
-        "finish_rank", "is_win", "is_place", "lr_label",
-    }
-    exclude = id_cols | forbidden
-
-    # 残った数値・カテゴリ列を特徴量とする
-    feature_cols = [
-        c for c in df.columns
-        if c not in exclude and df[c].dtype not in ["object", "string"]
-    ]
-    return feature_cols
-
-
-def get_group_sizes(df: pd.DataFrame, race_id_col: str = "race_id") -> list[int]:
-    """LightGBM LambdaRank 用 group 配列（レースごとの頭数リスト）を返す。
-
-    前提: df は (race_date, race_id, horse_num) 順に並んでいなければならない。
-    sort=False は行順を尊重するため、parquet の行順序が正しい場合のみ正確な
-    グループ割り当てになる。create_features.py でこのソートを保証している。
-    """
-    return df.groupby(race_id_col, sort=False).size().tolist()
-
+from common import (
+    PROJECT_ROOT,
+    get_feature_cols,
+    get_group_sizes,
+    load_config,
+)
 
 # ─── 時系列 Fold 定義 ─────────────────────────────────────────────────────────
 

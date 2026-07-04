@@ -22,50 +22,12 @@ import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr
 
-# ─── パス解決 ──────────────────────────────────────────────────────────────────
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-CONFIG_PATH = PROJECT_ROOT / "pure_rank" / "config" / "train_config.json"
-
-
-def load_config() -> dict:
-    with open(CONFIG_PATH, encoding="utf-8") as f:
-        return json.load(f)
-
-
-# ─── 特徴量列の取得（train.py と同一ロジック） ──────────────────────────────────
-
-def get_feature_cols(df: pd.DataFrame, cfg: dict) -> list[str]:
-    id_cols = set(cfg["features"]["id_cols"])
-    forbidden = {
-        # 市場情報（絶対禁止）
-        "odds", "popularity", "win_odds", "place_odds",
-        "quinella_odds", "market_prob", "market_log_odds",
-        "init_score", "ninki",
-        "_time_dev",
-        "year", "month_day", "kai", "nichi", "race_num",
-        "horse_num", "registered_count", "finish_count",
-        "race_type_code", "weight_type", "race_condition_code",
-        "race_level", "race_age_type", "course_kubun",
-        "track_code",
-        "obstacle_mile_time_sec",
-        "dead_heat_flag", "dead_heat_count",
-        "breed_code", "region_code",
-        "sire_id", "bms_id",
-        # レース後にしか判明しない後出し情報
-        "racetime", "time_3f_after",
-        "corner_1", "corner_2", "corner_3", "corner_4",
-        "running_style_code",
-        "abnormal_code",
-        "hon_shokin", "fuka_shokin",
-        # 生ラベル
-        "finish_rank", "is_win", "is_place", "lr_label",
-    }
-    exclude = id_cols | forbidden
-    return [
-        c for c in df.columns
-        if c not in exclude and df[c].dtype not in ["object", "string"]
-    ]
-
+# 特徴量列選択・設定読み込みは common.py に一元化（train.py と同一ロジックを保証）
+from common import (
+    PROJECT_ROOT,
+    get_feature_cols,
+    load_config,
+)
 
 # ─── 予測値生成 ────────────────────────────────────────────────────────────────
 
@@ -145,21 +107,29 @@ def compute_metrics(
     df_eval = df_test.copy()
     df_eval["pred_score"] = predictions
 
-    race_ids = df_eval["race_id"].unique()
-    n_races = len(race_ids)
+    n_races = df_eval["race_id"].nunique()
+    has_horse_num = "horse_num" in df_eval.columns
 
     top1_hits = 0
     top3_hits = 0
     ndcg3_list = []
     spearman_list = []
 
-    for race_id in race_ids:
-        race = df_eval[df_eval["race_id"] == race_id].copy()
+    # groupby は race_id ごとに boolean マスク+copy を回すより高速（C-1）。
+    # race は df_eval のビュー（コピー不要。読み取りのみで変更しない）。
+    for race_id, race in df_eval.groupby("race_id", sort=False):
         if len(race) < 2:
             continue
 
-        # 予測スコアでソート（降順）
-        race_sorted = race.sort_values("pred_score", ascending=False)
+        # 予測スコアでソート（降順）。同点は horse_num 昇順で tie-break し決定性を保証する（C-2）。
+        # compute_supplementary_metrics の idxmax()（最初の最大値=行順で先勝ち）と同じ結果になるよう、
+        # 行順は create_features.py で horse_num 昇順ソート済みなので実質同一の tie-break となる。
+        if has_horse_num:
+            race_sorted = race.sort_values(
+                ["pred_score", "horse_num"], ascending=[False, True]
+            )
+        else:
+            race_sorted = race.sort_values("pred_score", ascending=False)
 
         actual_ranks = race["finish_rank"].values
         pred_order = race_sorted["finish_rank"].values
@@ -254,6 +224,9 @@ def compute_supplementary_metrics(
     pred_top1_time_diffs: list[float] = []
 
     for _, grp in df_eval.groupby("race_id"):
+        # idxmax() は同点時「最初の最大値」（=行順で先勝ち）を返す。
+        # 行順は create_features.py で horse_num 昇順ソート済みのため、
+        # compute_metrics の明示的 tie-break（pred_score desc, horse_num asc）と実質同一の結果になる（C-2）。
         pred_best_idx = grp["pred_score"].idxmax()  # 予測1位
         actual_rank = int(grp.loc[pred_best_idx, "finish_rank"])
         pred_top1_actual_ranks.append(actual_rank)
@@ -377,7 +350,7 @@ def main() -> None:
     print(f"Loading features: {feat_path}")
     df = pd.read_parquet(feat_path)
 
-    # テストデータ抽出（2023-01-01 以降）
+    # テストデータ抽出（config の training.valid_end より後 = テスト期間）
     valid_end_ts = pd.Timestamp(cfg["training"]["valid_end"])
     df_test = df[df["race_date"] > valid_end_ts].copy()
     print(f"Test set: {len(df_test):,} rows, {df_test['race_id'].nunique():,} races")
