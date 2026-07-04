@@ -127,6 +127,10 @@
     "lam_fit_train_valid_end": "2024-12-31",
     "lam_fit_n_races": 33945,
     "lam2_log_likelihood": -2.109612,
-    "lam3_log_likelihood": -2.136626
+    "lam3_log_likelihood": -2.136626,
+    "market_blend_beta_opt": 0.3,
+    "market_blend_fit_train_valid_end": "2024-12-31",
+    "market_blend_fit_n_races": 33945,
+    "market_blend_log_loss": 1.934639
   }
 }

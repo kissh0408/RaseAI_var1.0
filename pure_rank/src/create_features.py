@@ -695,6 +695,79 @@ def _build_pace_interaction_features(df: pd.DataFrame, cfg: dict) -> pd.DataFram
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# SECTION 5.76: Phase E — 福島・小倉弱点対策（v46 / v47）
+# 仕様書: docs/specs/2026-07-04-fukushima-kokura-features-design.md
+# ═══════════════════════════════════════════════════════════════════════════════
+
+DENSITY_CENTER_CONST: dict[str, float] = {}
+
+
+def _build_small_course_pool_features(df: pd.DataFrame) -> pd.DataFrame:
+    """hist_small_course_pool_win_rate_ts: 小回り4場プールの時系列勝率（shift(1)）。
+
+    course_code ∈ SMALL_COURSE_CODES の過去走のみ集計し、
+    hist_same_course_win_rate（course 単位）の NaN を補完する情報を提供する。
+    """
+    df = df.sort_values(["ketto_num", "race_date"]).reset_index(drop=True)
+    df["_small_course_win"] = np.where(
+        df["course_code"].astype(int).isin(SMALL_COURSE_CODES),
+        df["is_win"],
+        np.nan,
+    )
+    df["hist_small_course_pool_win_rate_ts"] = (
+        df.groupby("ketto_num")["_small_course_win"].transform(
+            lambda x: x.shift(1).expanding().mean()
+        )
+    )
+    df = df.drop(columns=["_small_course_win"])
+
+    col = df["hist_small_course_pool_win_rate_ts"]
+    print(f"  hist_small_course_pool_win_rate_ts: NaN率 {col.isna().mean():.1%}, "
+          f"mean {col.mean():.4f}, std {col.std():.4f}")
+    return df
+
+
+def _build_front_pref_x_density(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """front_pref_x_density = hist_front_running_pref × (field_front_runner_density − c).
+
+    v41_pace（自馬除外密度）とは異なり、既存 field_front_runner_density を使用。
+    センタリング定数 c は学習+valid期間のみで算出（Rule 3）。
+    """
+    valid_end = pd.Timestamp(cfg["training"]["valid_end"])
+    train_valid_mask = df["race_date"] <= valid_end
+    c = float(df.loc[train_valid_mask, "field_front_runner_density"].mean())
+    DENSITY_CENTER_CONST["c"] = c
+    print(f"  front_pref_x_density centering constant c = {c:.6f} "
+          f"(race_date <= {valid_end.date()}, n={int(train_valid_mask.sum()):,})")
+
+    df["front_pref_x_density"] = (
+        df["hist_front_running_pref"]
+        * (df["field_front_runner_density"] - c)
+    )
+
+    col = df["front_pref_x_density"]
+    print(f"  front_pref_x_density: NaN率 {col.isna().mean():.1%}, "
+          f"mean {col.mean():+.5f}, std {col.std():.5f}")
+    return df
+
+
+def _build_post_position_x_small(df: pd.DataFrame) -> pd.DataFrame:
+    """post_position_x_small = relative_post_position × course_is_small（小回り4場）。
+
+    v40_waku（枠×コース時系列バイアス）単体は -0.10pp 不合格だったが、
+    既存 relative_post_position との交互作用で小回り枠バイアスを明示する。
+    course_is_small は中間変数としてのみ使用し parquet には出力しない。
+    """
+    course_is_small = df["course_code"].astype(int).isin(SMALL_COURSE_CODES).astype(float)
+    df["post_position_x_small"] = df["relative_post_position"] * course_is_small
+    col = df["post_position_x_small"]
+    print(f"  post_position_x_small: NaN率 {col.isna().mean():.1%}, "
+          f"mean {col.mean():+.5f}, std {col.std():.5f}, "
+          f"nonzero {(col != 0).sum():,} rows")
+    return df
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 5: BLOODLINE FEATURES
 # 父馬・母父の産駒成績（Phase 3: 時系列正確版）。
 # 日次集計 → 累積 → shift(1) でリーク防止済み。
@@ -1610,6 +1683,9 @@ NEW_FEATURE_COLS_BY_VERSION: dict[str, list[str]] = {
     "v43_sire_tc": ["hist_sire_track_condition_win_rate_ts"],
     "v44_handicap": ["is_handicap_race"],
     "v45_transport": ["transport_category"],
+    "v46_small_pool": ["hist_small_course_pool_win_rate_ts"],
+    "v47_pace_x": ["front_pref_x_density"],
+    "v47_post_small": ["post_position_x_small"],
 }
 
 CORR_GATE_THRESHOLD: float = 0.7      # |r| >= 0.7 → 学習に進まず planner へ報告
@@ -1707,6 +1783,14 @@ def _save_manifest(df: pd.DataFrame, out_dir: Path, version: str) -> None:
                 "テスト期間（2025+）は含まない。"
             ),
         }
+    if version == "v47_pace_x" and "c" in DENSITY_CENTER_CONST:
+        manifest["density_center_const"] = {
+            "c": DENSITY_CENTER_CONST["c"],
+            "definition": (
+                "front_pref_x_density のセンタリング定数。学習+バリデーション期間"
+                "（race_date <= training.valid_end）の field_front_runner_density 平均。"
+            ),
+        }
     manifest_path = out_dir / f"manifest_{version}.json"
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)
@@ -1785,6 +1869,18 @@ def main() -> None:
     if version == "v41_pace":
         print("\n[5.75] Building pace interaction features (v41_pace)...")
         df = _build_pace_interaction_features(df, cfg)
+
+    if version == "v47_pace_x":
+        print("\n[5.77] Building front_pref_x_density (v47_pace_x)...")
+        df = _build_front_pref_x_density(df, cfg)
+
+    if version == "v47_post_small":
+        print("\n[5.78] Building post_position_x_small (v47_post_small)...")
+        df = _build_post_position_x_small(df)
+
+    if version == "v46_small_pool":
+        print("\n[5.76] Building small course pool win rate (v46_small_pool)...")
+        df = _build_small_course_pool_features(df)
 
     print("\n[6] Building training features (HC/WC)...")
     hc = _load_hc(cfg)
@@ -1952,6 +2048,42 @@ def main() -> None:
         )
         assert "course_is_small" not in df.columns, "中間変数 course_is_small が残っています"
         assert "course_straight_len" not in df.columns, "course_straight_len は出力禁止です"
+        print(f"\n[8.3] Column count assert PASS: {len(df.columns)} == 133")
+    elif version == "v46_small_pool":
+        assert len(df.columns) == 133, (
+            f"v46_small_pool は 133 列（132 + hist_small_course_pool_win_rate_ts）のはずですが "
+            f"{len(df.columns)} 列あります"
+        )
+        assert "hist_small_course_pool_win_rate_ts" in df.columns
+        assert "front_pref_x_small" in df.columns
+        assert "front_pref_x_density" not in df.columns
+        assert "front_pref_x_pace" not in df.columns
+        assert "hist_waku_course_bias_ts" not in df.columns
+        assert "transport_category" not in df.columns
+        assert "is_handicap_race" not in df.columns
+        assert "course_is_small" not in df.columns
+        print(f"\n[8.3] Column count assert PASS: {len(df.columns)} == 133")
+    elif version == "v47_pace_x":
+        assert len(df.columns) == 133, (
+            f"v47_pace_x は 133 列（132 + front_pref_x_density）のはずですが "
+            f"{len(df.columns)} 列あります"
+        )
+        assert "front_pref_x_density" in df.columns
+        assert "front_pref_x_small" in df.columns
+        assert "hist_small_course_pool_win_rate_ts" not in df.columns
+        assert "front_pref_x_pace" not in df.columns
+        assert "course_is_small" not in df.columns
+        print(f"\n[8.3] Column count assert PASS: {len(df.columns)} == 133")
+    elif version == "v47_post_small":
+        assert len(df.columns) == 133, (
+            f"v47_post_small は 133 列（132 + post_position_x_small）のはずですが "
+            f"{len(df.columns)} 列あります"
+        )
+        assert "post_position_x_small" in df.columns
+        assert "front_pref_x_small" in df.columns
+        assert "front_pref_x_density" not in df.columns
+        assert "hist_small_course_pool_win_rate_ts" not in df.columns
+        assert "course_is_small" not in df.columns
         print(f"\n[8.3] Column count assert PASS: {len(df.columns)} == 133")
 
     # 保存前に行順序を LambdaRank グループ割り当て用に修正する。

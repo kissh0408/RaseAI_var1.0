@@ -309,6 +309,245 @@ def compute_race_probabilities_stern(race_scores: np.ndarray, T: float, lam2: fl
     }
 
 
+def compute_race_probabilities_stern_from_p_win(
+    p_win: np.ndarray, lam2: float, lam3: float
+) -> dict:
+    """キャリブレーション済み p_win から Stern 型の全確率を計算する（R-6 市場ブレンド用）。"""
+    p = np.asarray(p_win, dtype=float)
+    total = p.sum()
+    if total <= _DENOM_EPS:
+        n = len(p)
+        p = np.full(n, 1.0 / n)
+    else:
+        p = p / total
+
+    p2, p3 = stern_place_probs(p, lam2, lam3)
+    p_top3 = p + p2 + p3
+    n = len(p)
+
+    quinella_matrix = np.zeros((n, n), dtype=float)
+    wide_matrix = np.zeros((n, n), dtype=float)
+    second_probs_cache = [stern_second_prob(p, i, lam2) for i in range(n)]
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            q_ij = p[i] * second_probs_cache[i][j] + p[j] * second_probs_cache[j][i]
+            quinella_matrix[i, j] = q_ij
+            quinella_matrix[j, i] = q_ij
+
+            w_ij = q_ij
+            for k in range(n):
+                if k == i or k == j:
+                    continue
+                w_ij += _prob_order_123_stern(p, i, k, j, lam2, lam3)
+                w_ij += _prob_order_123_stern(p, j, k, i, lam2, lam3)
+                w_ij += _prob_order_123_stern(p, k, i, j, lam2, lam3)
+                w_ij += _prob_order_123_stern(p, k, j, i, lam2, lam3)
+            wide_matrix[i, j] = w_ij
+            wide_matrix[j, i] = w_ij
+
+    return {
+        "p_win": p,
+        "p2": p2,
+        "p3": p3,
+        "p_top3": p_top3,
+        "wide_matrix": wide_matrix,
+        "quinella_matrix": quinella_matrix,
+    }
+
+
+# ─── 市場残差ブレンド（R-6 ベッティングレイヤー。特徴量には不使用） ─────────
+
+def _logit_prob(p: np.ndarray) -> np.ndarray:
+    p = np.clip(np.asarray(p, dtype=float), 1e-6, 1.0 - 1e-6)
+    return np.log(p / (1.0 - p))
+
+
+def market_win_probs_from_odds(odds: np.ndarray) -> np.ndarray | None:
+    """単勝オッズ（decimal）からレース内正規化した市場勝率を返す。無効なら None。"""
+    odds = np.asarray(odds, dtype=float)
+    if len(odds) < 2:
+        return None
+    valid = odds > 0
+    if valid.sum() < 2:
+        return None
+    raw = np.where(valid, 1.0 / np.clip(odds, 1.01, None), 0.0)
+    total = raw.sum()
+    if total <= _DENOM_EPS:
+        return None
+    return raw / total
+
+
+def standardize_scores_within_race(scores: np.ndarray) -> np.ndarray:
+    s = np.asarray(scores, dtype=float)
+    sd = s.std()
+    if sd < 1e-8:
+        return np.zeros_like(s)
+    return (s - s.mean()) / sd
+
+
+def blend_market_residual_probs(
+    p_market: np.ndarray, z_scores: np.ndarray, beta: float
+) -> np.ndarray:
+    """logit(p) = logit(p_market) + beta * z（var2 残差学習のベッティングレイヤー近似）。"""
+    logits = _logit_prob(p_market) + float(beta) * np.asarray(z_scores, dtype=float)
+    raw = 1.0 / (1.0 + np.exp(-logits))
+    total = raw.sum()
+    if total <= _DENOM_EPS:
+        n = len(raw)
+        return np.full(n, 1.0 / n)
+    return raw / total
+
+
+def build_win_odds_lookup_from_se_parquet(se_path: Path) -> dict[str, dict[int, float]]:
+    """SE_preprocessed.parquet から race_id -> {horse_num: odds} を構築（評価専用）。"""
+    se = pd.read_parquet(se_path, columns=["race_id", "horse_num", "odds"])
+    se = se[se["odds"] > 0]
+    lookup: dict[str, dict[int, float]] = {}
+    for rid, grp in se.groupby("race_id"):
+        lookup[str(rid)] = dict(
+            zip(grp["horse_num"].astype(int), grp["odds"].astype(float))
+        )
+    return lookup
+
+
+def _extract_race_data_for_market_blend(
+    df: pd.DataFrame,
+    predictions: np.ndarray,
+    win_odds_lookup: dict[str, dict[int, float]],
+) -> list[tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """(scores, is_win, odds) のレース単位リスト。オッズ欠損レースは除外。"""
+    dfc = df.copy()
+    dfc["pred_score"] = predictions
+    races: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
+    for race_id, grp in dfc.groupby("race_id"):
+        if len(grp) < 2:
+            continue
+        rid = str(race_id)
+        odds_map = win_odds_lookup.get(rid)
+        if not odds_map:
+            continue
+        horse_nums = grp["horse_num"].astype(int).values
+        odds_arr = np.array([odds_map.get(int(h), np.nan) for h in horse_nums], dtype=float)
+        if np.isnan(odds_arr).any() or (odds_arr <= 0).any():
+            continue
+        races.append((
+            grp["pred_score"].values,
+            grp["is_win"].values.astype(int),
+            odds_arr,
+        ))
+    return races
+
+
+def _market_blend_avg_log_loss(
+    races: list[tuple[np.ndarray, np.ndarray, np.ndarray]],
+    beta: float,
+) -> float:
+    losses: list[float] = []
+    for scores, is_win, odds_arr in races:
+        p_market = market_win_probs_from_odds(odds_arr)
+        if p_market is None:
+            continue
+        z = standardize_scores_within_race(scores)
+        p_blend = blend_market_residual_probs(p_market, z, beta)
+        winner_mask = is_win == 1
+        if not winner_mask.any():
+            continue
+        winner_idx = int(np.argmax(winner_mask))
+        p_w = max(float(p_blend[winner_idx]), 1e-15)
+        losses.append(-np.log(p_w))
+    return float(np.mean(losses)) if losses else float("inf")
+
+
+def _search_market_blend_beta(
+    races: list[tuple[np.ndarray, np.ndarray, np.ndarray]],
+    coarse_grid: list[float],
+    fine_step: float,
+) -> tuple[float, float]:
+    best_beta = float(coarse_grid[0])
+    best_loss = float("inf")
+    for beta in coarse_grid:
+        loss = _market_blend_avg_log_loss(races, float(beta))
+        if loss < best_loss:
+            best_loss = loss
+            best_beta = float(beta)
+
+    half = max(fine_step * 5, 0.05)
+    fine_start = max(0.0, best_beta - half)
+    fine_end = best_beta + half
+    fine_grid = np.arange(fine_start, fine_end + fine_step * 0.5, fine_step)
+    for beta in fine_grid:
+        loss = _market_blend_avg_log_loss(races, float(beta))
+        if loss < best_loss:
+            best_loss = loss
+            best_beta = float(beta)
+    return best_beta, best_loss
+
+
+def _save_market_blend_beta(cfg: dict, beta: float, log_loss: float, n_races: int) -> None:
+    cfg.setdefault("plackett_luce", {})
+    cfg["plackett_luce"]["market_blend_beta_opt"] = round(float(beta), 4)
+    cfg["plackett_luce"]["market_blend_fit_train_valid_end"] = cfg["training"]["valid_end"]
+    cfg["plackett_luce"]["market_blend_fit_n_races"] = int(n_races)
+    cfg["plackett_luce"]["market_blend_log_loss"] = round(float(log_loss), 6)
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    print(f"  Saved market_blend_beta_opt={beta:.4f} to {CONFIG_PATH}")
+
+
+def run_fit_market_blend(cfg: dict | None = None) -> float:
+    """TRAIN+VALID（<= valid_end）のみで市場残差ブレンド係数 beta をフィットする（Rule 3）。"""
+    if cfg is None:
+        cfg = load_config()
+
+    version = cfg["data"]["features_version"]
+    feat_path = PROJECT_ROOT / cfg["data"]["features_dir"] / f"features_{version}.parquet"
+    print(f"Loading features: {feat_path}")
+    df = pd.read_parquet(feat_path)
+
+    valid_end_ts = pd.Timestamp(cfg["training"]["valid_end"])
+    df_fit = df[df["race_date"] <= valid_end_ts].copy()
+    print(
+        f"TRAIN+VALID (race_date <= {valid_end_ts.date()}): "
+        f"{len(df_fit):,} rows, {df_fit['race_id'].nunique():,} races"
+    )
+
+    se_path = Path(cfg["data"]["src_parquet_dir"]) / "SE_preprocessed.parquet"
+    if not se_path.exists():
+        raise FileNotFoundError(
+            f"SE_preprocessed.parquet が見つかりません: {se_path}\n"
+            "単勝オッズはベッティングレイヤー評価専用。特徴量には混入しません。"
+        )
+    print(f"\nLoading win odds from SE (betting layer only): {se_path}")
+    win_odds_lookup = build_win_odds_lookup_from_se_parquet(se_path)
+    print(f"  Win odds races: {len(win_odds_lookup):,}")
+
+    feature_cols = get_feature_cols(df_fit, cfg)
+    models_dir = PROJECT_ROOT / cfg["data"]["models_dir"]
+    models = load_models(models_dir)
+    predictions = ensemble_predict(models, df_fit[feature_cols])
+
+    races = _extract_race_data_for_market_blend(df_fit, predictions, win_odds_lookup)
+    print(f"  Usable races with win odds: {len(races):,}")
+    if len(races) < 100:
+        raise ValueError("市場ブレンド fit 用レース数が不足しています（100未満）")
+
+    pl_cfg = cfg.get("plackett_luce", {})
+    beta_coarse = pl_cfg.get(
+        "market_blend_beta_search_coarse",
+        [round(float(x), 2) for x in np.arange(0.0, 2.01, 0.1)],
+    )
+    beta_fine_step = pl_cfg.get("market_blend_beta_search_fine_step", 0.02)
+
+    print("\n[market_blend] Fitting beta on winner log-loss (TRAIN+VALID only)...")
+    beta_opt, ll_opt = _search_market_blend_beta(races, beta_coarse, float(beta_fine_step))
+    print(f"  beta_opt={beta_opt:.4f}, avg_log_loss={ll_opt:.6f}, n_races={len(races):,}")
+
+    _save_market_blend_beta(cfg, beta_opt, ll_opt, len(races))
+    return beta_opt
+
+
 # ─── λ2・λ3 のフィット（TRAIN+VALID のみ。TEST は使わない） ──────────────────
 
 def _extract_race_data(df: pd.DataFrame, predictions: np.ndarray) -> list[tuple[np.ndarray, np.ndarray]]:
@@ -1472,11 +1711,20 @@ def main() -> None:
             "grid search and save to train_config.json.plackett_luce"
         ),
     )
+    parser.add_argument(
+        "--fit-market-blend",
+        action="store_true",
+        help=(
+            "Fit market residual blend beta on TRAIN+VALID (<= valid_end) using SE win odds "
+            "(betting layer only) and save to train_config.json.plackett_luce"
+        ),
+    )
     args = parser.parse_args()
 
     if not any([
         args.calibrate, args.eval, args.race_id,
         args.fit_calibration, args.fit_bracket_calibration, args.fit_lambda,
+        args.fit_market_blend,
     ]):
         parser.print_help()
         sys.exit(1)
@@ -1494,6 +1742,8 @@ def main() -> None:
         run_fit_bracket_calibration(cfg)
     if args.fit_lambda:
         run_fit_lambda(cfg)
+    if args.fit_market_blend:
+        run_fit_market_blend(cfg)
 
 
 if __name__ == "__main__":

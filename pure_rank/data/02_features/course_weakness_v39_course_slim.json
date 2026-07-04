@@ -1,0 +1,1261 @@
+{
+  "model_version": "v39_course_slim",
+  "overall_top1": 0.302408,
+  "n_test_races": 4775,
+  "block_a_weak_course_crosstab": {
+    "3": {
+      "course_name": "福島",
+      "overall_top1": 0.227564,
+      "n_races": 312,
+      "by_surface": {
+        "1": {
+          "top1_rate": 0.251429,
+          "n_races": 175,
+          "keys": {
+            "surface_code": "1"
+          }
+        },
+        "2": {
+          "top1_rate": 0.18254,
+          "n_races": 126,
+          "keys": {
+            "surface_code": "2"
+          }
+        },
+        "5": {
+          "top1_rate": 0.363636,
+          "n_races": 11,
+          "keys": {
+            "surface_code": "5"
+          }
+        }
+      },
+      "by_distance": {
+        "0": {
+          "top1_rate": 0.227642,
+          "n_races": 123,
+          "keys": {
+            "distance_category": "0"
+          }
+        },
+        "1": {
+          "top1_rate": 0.20339,
+          "n_races": 118,
+          "keys": {
+            "distance_category": "1"
+          }
+        },
+        "2": {
+          "top1_rate": 0.292683,
+          "n_races": 41,
+          "keys": {
+            "distance_category": "2"
+          }
+        },
+        "3": {
+          "top1_rate": 0.233333,
+          "n_races": 30,
+          "keys": {
+            "distance_category": "3"
+          }
+        }
+      },
+      "by_horse_count": {
+        "13-16": {
+          "top1_rate": 0.216418,
+          "n_races": 268,
+          "keys": {
+            "horse_count_bucket": "13-16"
+          }
+        },
+        "5-8": {
+          "top1_rate": 0.272727,
+          "n_races": 11,
+          "keys": {
+            "horse_count_bucket": "5-8"
+          }
+        },
+        "9-12": {
+          "top1_rate": 0.30303,
+          "n_races": 33,
+          "keys": {
+            "horse_count_bucket": "9-12"
+          }
+        }
+      },
+      "by_track_condition": {
+        "0": {
+          "top1_rate": 0.363636,
+          "n_races": 11,
+          "keys": {
+            "track_condition_code": "0"
+          }
+        },
+        "1": {
+          "top1_rate": 0.219595,
+          "n_races": 296,
+          "keys": {
+            "track_condition_code": "1"
+          }
+        },
+        "2": {
+          "top1_rate": 0.4,
+          "n_races": 5,
+          "keys": {
+            "track_condition_code": "2"
+          }
+        }
+      },
+      "by_surface_distance": {
+        "1|0": {
+          "top1_rate": 0.253333,
+          "n_races": 75,
+          "keys": {
+            "surface_code": "1",
+            "distance_category": "0"
+          }
+        },
+        "1|1": {
+          "top1_rate": 0.243902,
+          "n_races": 41,
+          "keys": {
+            "surface_code": "1",
+            "distance_category": "1"
+          }
+        },
+        "1|2": {
+          "top1_rate": 0.292683,
+          "n_races": 41,
+          "keys": {
+            "surface_code": "1",
+            "distance_category": "2"
+          }
+        },
+        "1|3": {
+          "top1_rate": 0.166667,
+          "n_races": 18,
+          "keys": {
+            "surface_code": "1",
+            "distance_category": "3"
+          }
+        },
+        "2|0": {
+          "top1_rate": 0.1875,
+          "n_races": 48,
+          "keys": {
+            "surface_code": "2",
+            "distance_category": "0"
+          }
+        },
+        "2|1": {
+          "top1_rate": 0.181818,
+          "n_races": 77,
+          "keys": {
+            "surface_code": "2",
+            "distance_category": "1"
+          }
+        },
+        "2|3": {
+          "top1_rate": 0.0,
+          "n_races": 1,
+          "keys": {
+            "surface_code": "2",
+            "distance_category": "3"
+          }
+        },
+        "5|3": {
+          "top1_rate": 0.363636,
+          "n_races": 11,
+          "keys": {
+            "surface_code": "5",
+            "distance_category": "3"
+          }
+        }
+      },
+      "by_surface_horse_count": {
+        "1|13-16": {
+          "top1_rate": 0.232394,
+          "n_races": 142,
+          "keys": {
+            "surface_code": "1",
+            "horse_count_bucket": "13-16"
+          }
+        },
+        "1|5-8": {
+          "top1_rate": 0.222222,
+          "n_races": 9,
+          "keys": {
+            "surface_code": "1",
+            "horse_count_bucket": "5-8"
+          }
+        },
+        "1|9-12": {
+          "top1_rate": 0.375,
+          "n_races": 24,
+          "keys": {
+            "surface_code": "1",
+            "horse_count_bucket": "9-12"
+          }
+        },
+        "2|13-16": {
+          "top1_rate": 0.190083,
+          "n_races": 121,
+          "keys": {
+            "surface_code": "2",
+            "horse_count_bucket": "13-16"
+          }
+        },
+        "2|5-8": {
+          "top1_rate": 0.0,
+          "n_races": 1,
+          "keys": {
+            "surface_code": "2",
+            "horse_count_bucket": "5-8"
+          }
+        },
+        "2|9-12": {
+          "top1_rate": 0.0,
+          "n_races": 4,
+          "keys": {
+            "surface_code": "2",
+            "horse_count_bucket": "9-12"
+          }
+        },
+        "5|13-16": {
+          "top1_rate": 0.4,
+          "n_races": 5,
+          "keys": {
+            "surface_code": "5",
+            "horse_count_bucket": "13-16"
+          }
+        },
+        "5|5-8": {
+          "top1_rate": 1.0,
+          "n_races": 1,
+          "keys": {
+            "surface_code": "5",
+            "horse_count_bucket": "5-8"
+          }
+        },
+        "5|9-12": {
+          "top1_rate": 0.2,
+          "n_races": 5,
+          "keys": {
+            "surface_code": "5",
+            "horse_count_bucket": "9-12"
+          }
+        }
+      }
+    },
+    "10": {
+      "course_name": "小倉",
+      "overall_top1": 0.224543,
+      "n_races": 383,
+      "by_surface": {
+        "1": {
+          "top1_rate": 0.236111,
+          "n_races": 216,
+          "keys": {
+            "surface_code": "1"
+          }
+        },
+        "2": {
+          "top1_rate": 0.210938,
+          "n_races": 128,
+          "keys": {
+            "surface_code": "2"
+          }
+        },
+        "5": {
+          "top1_rate": 0.205128,
+          "n_races": 39,
+          "keys": {
+            "surface_code": "5"
+          }
+        }
+      },
+      "by_distance": {
+        "0": {
+          "top1_rate": 0.180451,
+          "n_races": 133,
+          "keys": {
+            "distance_category": "0"
+          }
+        },
+        "1": {
+          "top1_rate": 0.259259,
+          "n_races": 135,
+          "keys": {
+            "distance_category": "1"
+          }
+        },
+        "2": {
+          "top1_rate": 0.263158,
+          "n_races": 57,
+          "keys": {
+            "distance_category": "2"
+          }
+        },
+        "3": {
+          "top1_rate": 0.206897,
+          "n_races": 58,
+          "keys": {
+            "distance_category": "3"
+          }
+        }
+      },
+      "by_horse_count": {
+        "13-16": {
+          "top1_rate": 0.206186,
+          "n_races": 194,
+          "keys": {
+            "horse_count_bucket": "13-16"
+          }
+        },
+        "17+": {
+          "top1_rate": 0.224719,
+          "n_races": 89,
+          "keys": {
+            "horse_count_bucket": "17+"
+          }
+        },
+        "5-8": {
+          "top1_rate": 0.333333,
+          "n_races": 18,
+          "keys": {
+            "horse_count_bucket": "5-8"
+          }
+        },
+        "9-12": {
+          "top1_rate": 0.243902,
+          "n_races": 82,
+          "keys": {
+            "horse_count_bucket": "9-12"
+          }
+        }
+      },
+      "by_track_condition": {
+        "0": {
+          "top1_rate": 0.205128,
+          "n_races": 39,
+          "keys": {
+            "track_condition_code": "0"
+          }
+        },
+        "1": {
+          "top1_rate": 0.25098,
+          "n_races": 255,
+          "keys": {
+            "track_condition_code": "1"
+          }
+        },
+        "2": {
+          "top1_rate": 0.174603,
+          "n_races": 63,
+          "keys": {
+            "track_condition_code": "2"
+          }
+        },
+        "3": {
+          "top1_rate": 0.090909,
+          "n_races": 22,
+          "keys": {
+            "track_condition_code": "3"
+          }
+        },
+        "4": {
+          "top1_rate": 0.25,
+          "n_races": 4,
+          "keys": {
+            "track_condition_code": "4"
+          }
+        }
+      },
+      "by_surface_distance": {
+        "1|0": {
+          "top1_rate": 0.191489,
+          "n_races": 94,
+          "keys": {
+            "surface_code": "1",
+            "distance_category": "0"
+          }
+        },
+        "1|1": {
+          "top1_rate": 0.32,
+          "n_races": 50,
+          "keys": {
+            "surface_code": "1",
+            "distance_category": "1"
+          }
+        },
+        "1|2": {
+          "top1_rate": 0.263158,
+          "n_races": 57,
+          "keys": {
+            "surface_code": "1",
+            "distance_category": "2"
+          }
+        },
+        "1|3": {
+          "top1_rate": 0.133333,
+          "n_races": 15,
+          "keys": {
+            "surface_code": "1",
+            "distance_category": "3"
+          }
+        },
+        "2|0": {
+          "top1_rate": 0.153846,
+          "n_races": 39,
+          "keys": {
+            "surface_code": "2",
+            "distance_category": "0"
+          }
+        },
+        "2|1": {
+          "top1_rate": 0.223529,
+          "n_races": 85,
+          "keys": {
+            "surface_code": "2",
+            "distance_category": "1"
+          }
+        },
+        "2|3": {
+          "top1_rate": 0.5,
+          "n_races": 4,
+          "keys": {
+            "surface_code": "2",
+            "distance_category": "3"
+          }
+        },
+        "5|3": {
+          "top1_rate": 0.205128,
+          "n_races": 39,
+          "keys": {
+            "surface_code": "5",
+            "distance_category": "3"
+          }
+        }
+      },
+      "by_surface_horse_count": {
+        "1|13-16": {
+          "top1_rate": 0.231707,
+          "n_races": 82,
+          "keys": {
+            "surface_code": "1",
+            "horse_count_bucket": "13-16"
+          }
+        },
+        "1|17+": {
+          "top1_rate": 0.224719,
+          "n_races": 89,
+          "keys": {
+            "surface_code": "1",
+            "horse_count_bucket": "17+"
+          }
+        },
+        "1|5-8": {
+          "top1_rate": 0.384615,
+          "n_races": 13,
+          "keys": {
+            "surface_code": "1",
+            "horse_count_bucket": "5-8"
+          }
+        },
+        "1|9-12": {
+          "top1_rate": 0.21875,
+          "n_races": 32,
+          "keys": {
+            "surface_code": "1",
+            "horse_count_bucket": "9-12"
+          }
+        },
+        "2|13-16": {
+          "top1_rate": 0.183486,
+          "n_races": 109,
+          "keys": {
+            "surface_code": "2",
+            "horse_count_bucket": "13-16"
+          }
+        },
+        "2|5-8": {
+          "top1_rate": 0.333333,
+          "n_races": 3,
+          "keys": {
+            "surface_code": "2",
+            "horse_count_bucket": "5-8"
+          }
+        },
+        "2|9-12": {
+          "top1_rate": 0.375,
+          "n_races": 16,
+          "keys": {
+            "surface_code": "2",
+            "horse_count_bucket": "9-12"
+          }
+        },
+        "5|13-16": {
+          "top1_rate": 0.333333,
+          "n_races": 3,
+          "keys": {
+            "surface_code": "5",
+            "horse_count_bucket": "13-16"
+          }
+        },
+        "5|5-8": {
+          "top1_rate": 0.0,
+          "n_races": 2,
+          "keys": {
+            "surface_code": "5",
+            "horse_count_bucket": "5-8"
+          }
+        },
+        "5|9-12": {
+          "top1_rate": 0.205882,
+          "n_races": 34,
+          "keys": {
+            "surface_code": "5",
+            "horse_count_bucket": "9-12"
+          }
+        }
+      }
+    }
+  },
+  "block_b_small_course_comparison": {
+    "1": {
+      "course_name": "札幌",
+      "top1_rate": 0.311377,
+      "n_races": 167,
+      "gap_vs_overall": 0.008969,
+      "by_surface": {
+        "1": {
+          "top1_rate": 0.326531,
+          "n_races": 98,
+          "keys": {
+            "surface_code": "1"
+          }
+        },
+        "2": {
+          "top1_rate": 0.289855,
+          "n_races": 69,
+          "keys": {
+            "surface_code": "2"
+          }
+        }
+      },
+      "by_distance": {
+        "0": {
+          "top1_rate": 0.268293,
+          "n_races": 41,
+          "keys": {
+            "distance_category": "0"
+          }
+        },
+        "1": {
+          "top1_rate": 0.351064,
+          "n_races": 94,
+          "keys": {
+            "distance_category": "1"
+          }
+        },
+        "2": {
+          "top1_rate": 0.190476,
+          "n_races": 21,
+          "keys": {
+            "distance_category": "2"
+          }
+        },
+        "3": {
+          "top1_rate": 0.363636,
+          "n_races": 11,
+          "keys": {
+            "distance_category": "3"
+          }
+        }
+      },
+      "median_score_gap_top2": 0.3401
+    },
+    "2": {
+      "course_name": "函館",
+      "top1_rate": 0.402778,
+      "n_races": 144,
+      "gap_vs_overall": 0.100369,
+      "by_surface": {
+        "1": {
+          "top1_rate": 0.4,
+          "n_races": 85,
+          "keys": {
+            "surface_code": "1"
+          }
+        },
+        "2": {
+          "top1_rate": 0.40678,
+          "n_races": 59,
+          "keys": {
+            "surface_code": "2"
+          }
+        }
+      },
+      "by_distance": {
+        "0": {
+          "top1_rate": 0.328125,
+          "n_races": 64,
+          "keys": {
+            "distance_category": "0"
+          }
+        },
+        "1": {
+          "top1_rate": 0.465517,
+          "n_races": 58,
+          "keys": {
+            "distance_category": "1"
+          }
+        },
+        "2": {
+          "top1_rate": 0.384615,
+          "n_races": 13,
+          "keys": {
+            "distance_category": "2"
+          }
+        },
+        "3": {
+          "top1_rate": 0.555556,
+          "n_races": 9,
+          "keys": {
+            "distance_category": "3"
+          }
+        }
+      },
+      "median_score_gap_top2": 0.3231
+    },
+    "3": {
+      "course_name": "福島",
+      "top1_rate": 0.227564,
+      "n_races": 312,
+      "gap_vs_overall": -0.074844,
+      "by_surface": {
+        "1": {
+          "top1_rate": 0.251429,
+          "n_races": 175,
+          "keys": {
+            "surface_code": "1"
+          }
+        },
+        "2": {
+          "top1_rate": 0.18254,
+          "n_races": 126,
+          "keys": {
+            "surface_code": "2"
+          }
+        },
+        "5": {
+          "top1_rate": 0.363636,
+          "n_races": 11,
+          "keys": {
+            "surface_code": "5"
+          }
+        }
+      },
+      "by_distance": {
+        "0": {
+          "top1_rate": 0.227642,
+          "n_races": 123,
+          "keys": {
+            "distance_category": "0"
+          }
+        },
+        "1": {
+          "top1_rate": 0.20339,
+          "n_races": 118,
+          "keys": {
+            "distance_category": "1"
+          }
+        },
+        "2": {
+          "top1_rate": 0.292683,
+          "n_races": 41,
+          "keys": {
+            "distance_category": "2"
+          }
+        },
+        "3": {
+          "top1_rate": 0.233333,
+          "n_races": 30,
+          "keys": {
+            "distance_category": "3"
+          }
+        }
+      },
+      "median_score_gap_top2": 0.3665
+    },
+    "10": {
+      "course_name": "小倉",
+      "top1_rate": 0.224543,
+      "n_races": 383,
+      "gap_vs_overall": -0.077865,
+      "by_surface": {
+        "1": {
+          "top1_rate": 0.236111,
+          "n_races": 216,
+          "keys": {
+            "surface_code": "1"
+          }
+        },
+        "2": {
+          "top1_rate": 0.210938,
+          "n_races": 128,
+          "keys": {
+            "surface_code": "2"
+          }
+        },
+        "5": {
+          "top1_rate": 0.205128,
+          "n_races": 39,
+          "keys": {
+            "surface_code": "5"
+          }
+        }
+      },
+      "by_distance": {
+        "0": {
+          "top1_rate": 0.180451,
+          "n_races": 133,
+          "keys": {
+            "distance_category": "0"
+          }
+        },
+        "1": {
+          "top1_rate": 0.259259,
+          "n_races": 135,
+          "keys": {
+            "distance_category": "1"
+          }
+        },
+        "2": {
+          "top1_rate": 0.263158,
+          "n_races": 57,
+          "keys": {
+            "distance_category": "2"
+          }
+        },
+        "3": {
+          "top1_rate": 0.206897,
+          "n_races": 58,
+          "keys": {
+            "distance_category": "3"
+          }
+        }
+      },
+      "median_score_gap_top2": 0.2888
+    }
+  },
+  "block_c_feature_availability": {
+    "weak": {
+      "n_samples": 10007,
+      "courses": [
+        3,
+        10
+      ],
+      "hist_same_course_win_rate": {
+        "nan_rate": 0.5174,
+        "mean": 0.1246,
+        "std": 0.2665
+      },
+      "hist_same_course_dist_win_rate": {
+        "nan_rate": 0.6036,
+        "mean": 0.1371,
+        "std": 0.2855
+      },
+      "hist_jockey_course_win_rate": {
+        "nan_rate": 0.0243,
+        "mean": 0.0666,
+        "std": 0.0388
+      },
+      "hist_front_running_pref": {
+        "nan_rate": 0.0716,
+        "mean": 0.4048,
+        "std": 0.3066
+      }
+    },
+    "other": {
+      "n_samples": 56013,
+      "courses": [
+        1,
+        2,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "hist_same_course_win_rate": {
+        "nan_rate": 0.3831,
+        "mean": 0.1134,
+        "std": 0.2336
+      },
+      "hist_same_course_dist_win_rate": {
+        "nan_rate": 0.5111,
+        "mean": 0.1273,
+        "std": 0.2608
+      },
+      "hist_jockey_course_win_rate": {
+        "nan_rate": 0.0217,
+        "mean": 0.07,
+        "std": 0.0496
+      },
+      "hist_front_running_pref": {
+        "nan_rate": 0.1006,
+        "mean": 0.3838,
+        "std": 0.3133
+      }
+    },
+    "per_small_course": {
+      "1": {
+        "course_name": "札幌",
+        "hist_same_course_win_rate": {
+          "nan_rate": 0.5144,
+          "mean": 0.1227,
+          "std": 0.2762
+        },
+        "hist_same_course_dist_win_rate": {
+          "nan_rate": 0.6086,
+          "mean": 0.1379,
+          "std": 0.3024
+        },
+        "hist_jockey_course_win_rate": {
+          "nan_rate": 0.0708,
+          "mean": 0.0757,
+          "std": 0.0489
+        },
+        "hist_front_running_pref": {
+          "nan_rate": 0.0698,
+          "mean": 0.42,
+          "std": 0.297
+        }
+      },
+      "2": {
+        "course_name": "函館",
+        "hist_same_course_win_rate": {
+          "nan_rate": 0.4958,
+          "mean": 0.1014,
+          "std": 0.2549
+        },
+        "hist_same_course_dist_win_rate": {
+          "nan_rate": 0.5754,
+          "mean": 0.113,
+          "std": 0.2721
+        },
+        "hist_jockey_course_win_rate": {
+          "nan_rate": 0.0711,
+          "mean": 0.0849,
+          "std": 0.0441
+        },
+        "hist_front_running_pref": {
+          "nan_rate": 0.0728,
+          "mean": 0.4177,
+          "std": 0.2957
+        }
+      },
+      "3": {
+        "course_name": "福島",
+        "hist_same_course_win_rate": {
+          "nan_rate": 0.5596,
+          "mean": 0.1197,
+          "std": 0.2674
+        },
+        "hist_same_course_dist_win_rate": {
+          "nan_rate": 0.6358,
+          "mean": 0.1342,
+          "std": 0.2878
+        },
+        "hist_jockey_course_win_rate": {
+          "nan_rate": 0.0277,
+          "mean": 0.069,
+          "std": 0.0407
+        },
+        "hist_front_running_pref": {
+          "nan_rate": 0.0854,
+          "mean": 0.3934,
+          "std": 0.3062
+        }
+      },
+      "10": {
+        "course_name": "小倉",
+        "hist_same_course_win_rate": {
+          "nan_rate": 0.4827,
+          "mean": 0.128,
+          "std": 0.2658
+        },
+        "hist_same_course_dist_win_rate": {
+          "nan_rate": 0.5771,
+          "mean": 0.1391,
+          "std": 0.2839
+        },
+        "hist_jockey_course_win_rate": {
+          "nan_rate": 0.0215,
+          "mean": 0.0645,
+          "std": 0.037
+        },
+        "hist_front_running_pref": {
+          "nan_rate": 0.0603,
+          "mean": 0.414,
+          "std": 0.3065
+        }
+      }
+    }
+  },
+  "block_d_miss_classification": {
+    "3": {
+      "course_name": "福島",
+      "n_miss": 241,
+      "pred_top3_but_not_win": 101,
+      "pred_outside_top3": 140,
+      "actual_winner_front_runner": 178,
+      "pred_picked_front_runner": 146,
+      "low_confidence_misses": 120,
+      "pred_winner_same_course_nan_rate": 0.5768,
+      "actual_winner_same_course_nan_rate": 0.5975,
+      "median_pred_winner_finish": 4.0,
+      "median_score_gap_top2": 0.3454
+    },
+    "10": {
+      "course_name": "小倉",
+      "n_miss": 297,
+      "pred_top3_but_not_win": 130,
+      "pred_outside_top3": 167,
+      "actual_winner_front_runner": 218,
+      "pred_picked_front_runner": 170,
+      "low_confidence_misses": 148,
+      "pred_winner_same_course_nan_rate": 0.3939,
+      "actual_winner_same_course_nan_rate": 0.4815,
+      "median_pred_winner_finish": 4.0,
+      "median_score_gap_top2": 0.2634
+    },
+    "weak_combined": {
+      "n_miss": 538,
+      "pred_top3_but_not_win": 231,
+      "pred_outside_top3": 307,
+      "actual_winner_front_runner": 396,
+      "pred_picked_front_runner": 316,
+      "low_confidence_misses": 269,
+      "pred_winner_same_course_nan_rate": 0.4758,
+      "actual_winner_same_course_nan_rate": 0.5335,
+      "median_pred_winner_finish": 4.0,
+      "median_score_gap_top2": 0.2905
+    }
+  },
+  "block_e_running_style_bias": {
+    "1": {
+      "course_name": "札幌",
+      "actual_winner_by_running_style": {
+        "1": {
+          "label": "逃げ",
+          "win_share": 0.2395,
+          "n_wins": 40
+        },
+        "2": {
+          "label": "先行",
+          "win_share": 0.5928,
+          "n_wins": 99
+        },
+        "3": {
+          "label": "差し",
+          "win_share": 0.1437,
+          "n_wins": 24
+        },
+        "4": {
+          "label": "追込",
+          "win_share": 0.024,
+          "n_wins": 4
+        }
+      },
+      "model_top1_by_predicted_running_style": {
+        "2": {
+          "n": 79,
+          "label": "先行",
+          "top1_rate": 0.3924
+        },
+        "1": {
+          "n": 31,
+          "label": "逃げ",
+          "top1_rate": 0.4839
+        },
+        "3": {
+          "n": 42,
+          "label": "差し",
+          "top1_rate": 0.119
+        },
+        "4": {
+          "n": 15,
+          "label": "追込",
+          "top1_rate": 0.0667
+        }
+      },
+      "n_races": 167
+    },
+    "2": {
+      "course_name": "函館",
+      "actual_winner_by_running_style": {
+        "1": {
+          "label": "逃げ",
+          "win_share": 0.2361,
+          "n_wins": 34
+        },
+        "2": {
+          "label": "先行",
+          "win_share": 0.5903,
+          "n_wins": 85
+        },
+        "3": {
+          "label": "差し",
+          "win_share": 0.1667,
+          "n_wins": 24
+        },
+        "4": {
+          "label": "追込",
+          "win_share": 0.0069,
+          "n_wins": 1
+        }
+      },
+      "model_top1_by_predicted_running_style": {
+        "4": {
+          "n": 13,
+          "label": "追込",
+          "top1_rate": 0.0
+        },
+        "2": {
+          "n": 69,
+          "label": "先行",
+          "top1_rate": 0.4638
+        },
+        "3": {
+          "n": 35,
+          "label": "差し",
+          "top1_rate": 0.3143
+        },
+        "1": {
+          "n": 27,
+          "label": "逃げ",
+          "top1_rate": 0.5556
+        }
+      },
+      "n_races": 144
+    },
+    "3": {
+      "course_name": "福島",
+      "actual_winner_by_running_style": {
+        "1": {
+          "label": "逃げ",
+          "win_share": 0.2147,
+          "n_wins": 67
+        },
+        "2": {
+          "label": "先行",
+          "win_share": 0.5385,
+          "n_wins": 168
+        },
+        "3": {
+          "label": "差し",
+          "win_share": 0.2147,
+          "n_wins": 67
+        },
+        "4": {
+          "label": "追込",
+          "win_share": 0.0321,
+          "n_wins": 10
+        }
+      },
+      "model_top1_by_predicted_running_style": {
+        "2": {
+          "n": 164,
+          "label": "先行",
+          "top1_rate": 0.2683
+        },
+        "3": {
+          "n": 86,
+          "label": "差し",
+          "top1_rate": 0.1512
+        },
+        "4": {
+          "n": 23,
+          "label": "追込",
+          "top1_rate": 0.0435
+        },
+        "1": {
+          "n": 39,
+          "label": "逃げ",
+          "top1_rate": 0.3333
+        }
+      },
+      "n_races": 312
+    },
+    "10": {
+      "course_name": "小倉",
+      "actual_winner_by_running_style": {
+        "1": {
+          "label": "逃げ",
+          "win_share": 0.2727,
+          "n_wins": 105
+        },
+        "2": {
+          "label": "先行",
+          "win_share": 0.4831,
+          "n_wins": 186
+        },
+        "3": {
+          "label": "差し",
+          "win_share": 0.2104,
+          "n_wins": 81
+        },
+        "4": {
+          "label": "追込",
+          "win_share": 0.0338,
+          "n_wins": 13
+        }
+      },
+      "model_top1_by_predicted_running_style": {
+        "2": {
+          "n": 193,
+          "label": "先行",
+          "top1_rate": 0.2694
+        },
+        "3": {
+          "n": 121,
+          "label": "差し",
+          "top1_rate": 0.1074
+        },
+        "1": {
+          "n": 49,
+          "label": "逃げ",
+          "top1_rate": 0.4082
+        },
+        "4": {
+          "n": 20,
+          "label": "追込",
+          "top1_rate": 0.05
+        }
+      },
+      "n_races": 383
+    }
+  },
+  "block_f_train_period_stats": {
+    "1": {
+      "course_name": "札幌",
+      "n_samples": 19528,
+      "n_races": 1550,
+      "n_race_days": 130,
+      "front_runner_win_rate": 0.7826,
+      "wakuban_win_rate": {
+        "1": 0.0945,
+        "2": 0.0913,
+        "3": 0.1106,
+        "4": 0.117,
+        "5": 0.1338,
+        "6": 0.1537,
+        "7": 0.1492,
+        "8": 0.1498
+      },
+      "hist_same_course_nan_rate": 0.5313
+    },
+    "2": {
+      "course_name": "函館",
+      "n_samples": 17762,
+      "n_races": 1440,
+      "n_race_days": 120,
+      "front_runner_win_rate": 0.7972,
+      "wakuban_win_rate": {
+        "1": 0.0976,
+        "2": 0.101,
+        "3": 0.108,
+        "4": 0.1066,
+        "5": 0.1467,
+        "6": 0.1571,
+        "7": 0.1384,
+        "8": 0.1446
+      },
+      "hist_same_course_nan_rate": 0.4965
+    },
+    "3": {
+      "course_name": "福島",
+      "n_samples": 32993,
+      "n_races": 2304,
+      "n_race_days": 192,
+      "front_runner_win_rate": 0.7408,
+      "wakuban_win_rate": {
+        "1": 0.1084,
+        "2": 0.1175,
+        "3": 0.1309,
+        "4": 0.1235,
+        "5": 0.1296,
+        "6": 0.124,
+        "7": 0.1331,
+        "8": 0.1331
+      },
+      "hist_same_course_nan_rate": 0.5682
+    },
+    "10": {
+      "course_name": "小倉",
+      "n_samples": 38132,
+      "n_races": 2712,
+      "n_race_days": 226,
+      "front_runner_win_rate": 0.7653,
+      "wakuban_win_rate": {
+        "1": 0.0895,
+        "2": 0.1109,
+        "3": 0.1039,
+        "4": 0.1087,
+        "5": 0.1349,
+        "6": 0.15,
+        "7": 0.1551,
+        "8": 0.147
+      },
+      "hist_same_course_nan_rate": 0.4553
+    }
+  },
+  "hypothesis_signals": {
+    "H1_course_sparsity": {
+      "weak_courses_nan_rate": 0.5174,
+      "other_courses_nan_rate": 0.3831,
+      "delta_nan": 0.1343,
+      "signal": "strong"
+    },
+    "H2_waku_bias": {
+      "fukushima_wakuban_win_rate_train": {
+        "1": 0.1084,
+        "2": 0.1175,
+        "3": 0.1309,
+        "4": 0.1235,
+        "5": 0.1296,
+        "6": 0.124,
+        "7": 0.1331,
+        "8": 0.1331
+      },
+      "kokura_wakuban_win_rate_train": {
+        "1": 0.0895,
+        "2": 0.1109,
+        "3": 0.1039,
+        "4": 0.1087,
+        "5": 0.1349,
+        "6": 0.15,
+        "7": 0.1551,
+        "8": 0.147
+      }
+    },
+    "H3_pace_density": {
+      "weak_combined_front_winner_share": 396,
+      "weak_combined_n_miss": 538
+    },
+    "H4_fukushima_vs_kokura": {
+      "fukushima_top1": 0.227564,
+      "kokura_top1": 0.224543,
+      "hokkaido_top1": 0.353698,
+      "weak_top1": 0.225899
+    },
+    "recommended_priority": [
+      "H1: hist_small_course_pool_win_rate_ts",
+      "H3: front_pref_x_pace (orthogonalized)",
+      "H2: relative_post_position_x_small"
+    ]
+  }
+}
