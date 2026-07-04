@@ -1713,6 +1713,13 @@ def fetch_hc_only(start_date_year=2015, end_date_year=2025):
         "years": HC_YEARS,
     }
 
+    # 増分取得用の状態ファイル（HC専用。jv_last_update.json とは別ファイル）。
+    # 最新年（HC_TASK["years"][-1]）のみ、前回成功時点からの増分取得を行う。
+    # 過去年は従来通り年始からのフル取得を維持する（挙動を変えない）。
+    hc_state_path = Path(output_dir) / "state" / "hc_last_update.json"
+    hc_state = _load_state(hc_state_path)
+    hc_latest_year = HC_TASK["years"][-1]
+
     try:
         # HCタスクを処理
         for year in HC_TASK["years"]:
@@ -1735,6 +1742,12 @@ def fetch_hc_only(start_date_year=2015, end_date_year=2025):
             opt = task["option"]
             targets = set(task["target_ids"])  # セットに変換してinチェックを高速化
             task_start_date = year_start
+            if year == hc_latest_year:
+                # 最新年のみ、前回成功時点（同日00:00:00から）以降を取得する
+                task_start_date = _jv_resolve_start_datetime(
+                    hc_state, default=year_start, also_use_last_update_date=False
+                )
+            year_fetch_error = False
 
             print(f"\n--- Processing {ds} (Year: {year}) ---")
 
@@ -1897,6 +1910,7 @@ def fetch_hc_only(start_date_year=2015, end_date_year=2025):
 
             except Exception as e:
                 print(f"!!! Error processing {ds} ({year}): {e}")
+                year_fetch_error = True
             finally:
                 pbar.close()
                 if client:
@@ -1933,6 +1947,16 @@ def fetch_hc_only(start_date_year=2015, end_date_year=2025):
                 print(
                     f"  Added {total_count} new records, skipped {skipped_count} existing records for {ds} ({year})."
                 )
+
+            # 増分取得の状態を更新（最新年かつエラーなしの場合のみ）。
+            # 失敗時は state を更新しない（update_jra_data と同じ規約）。
+            if year == hc_latest_year and not year_fetch_error:
+                today_end = datetime.now().strftime("%Y%m%d") + "235959"
+                actual_end = min(year_end, today_end)
+                hc_state["last_success_end"] = actual_end
+                hc_state["last_run_at"] = datetime.now().strftime("%Y%m%d%H%M%S")
+                _save_state(hc_state_path, hc_state)
+                print(f"Saved state: {hc_state_path}")
 
     except Exception as e:
         print(f"\nTerminating due to error: {e}")
@@ -1973,6 +1997,13 @@ def fetch_wc_only(start_date_year=2021, end_date_year=2025):
         "years": WC_YEARS,
     }
 
+    # 増分取得用の状態ファイル（WC専用。jv_last_update.json / hc_last_update.json とは別ファイル）。
+    # 最新年（WC_TASK["years"][-1]）のみ、前回成功時点からの増分取得を行う。
+    # 過去年は従来通り年始（または2021年は7/27）からのフル取得を維持する（挙動を変えない）。
+    wc_state_path = Path(output_dir) / "state" / "wc_last_update.json"
+    wc_state = _load_state(wc_state_path)
+    wc_latest_year = WC_TASK["years"][-1]
+
     try:
         # WCタスクを処理
         for year in WC_TASK["years"]:
@@ -2000,6 +2031,12 @@ def fetch_wc_only(start_date_year=2021, end_date_year=2025):
                 task_start_date = "20210727000000"
             else:
                 task_start_date = year_start
+            if year == wc_latest_year:
+                # 最新年のみ、前回成功時点（同日00:00:00から）以降を取得する
+                task_start_date = _jv_resolve_start_datetime(
+                    wc_state, default=task_start_date, also_use_last_update_date=False
+                )
+            year_fetch_error = False
 
             print(f"\n--- Processing {ds} (Year: {year}) ---")
 
@@ -2168,6 +2205,7 @@ def fetch_wc_only(start_date_year=2021, end_date_year=2025):
 
             except Exception as e:
                 print(f"!!! Error processing {ds} ({year}): {e}")
+                year_fetch_error = True
             finally:
                 pbar.close()
                 if client:
@@ -2204,6 +2242,16 @@ def fetch_wc_only(start_date_year=2021, end_date_year=2025):
                 print(
                     f"  Added {total_count} new records, skipped {skipped_count} existing records for {ds} ({year})."
                 )
+
+            # 増分取得の状態を更新（最新年かつエラーなしの場合のみ）。
+            # 失敗時は state を更新しない（update_jra_data と同じ規約）。
+            if year == wc_latest_year and not year_fetch_error:
+                today_end = datetime.now().strftime("%Y%m%d") + "235959"
+                actual_end = min(year_end, today_end)
+                wc_state["last_success_end"] = actual_end
+                wc_state["last_run_at"] = datetime.now().strftime("%Y%m%d%H%M%S")
+                _save_state(wc_state_path, wc_state)
+                print(f"Saved state: {wc_state_path}")
 
     except Exception as e:
         print(f"\nTerminating due to error: {e}")
@@ -5661,6 +5709,159 @@ def _race_id_from_race_row(row: dict) -> str:
         + str(row.get("nichi", "")).zfill(2)
         + str(row.get("race_num", "")).zfill(2)
     )
+
+
+# ─── 確定単勝オッズ・単勝人気順（WinOdds） ──────────────────────────────────
+#
+# 注記: JV-Link の速報オッズ(O1)ストリームを新たに取得するのではなく、
+# SE_SCHEMA（jv_schemas.py）に既に定義されている "odds"（確定単勝オッズ,
+# offset 360 len4）・"popularity"（確定単勝人気順, offset 364 len2）フィールドを
+# 使う。これらは RACE ストリームの SE レコードそのものに含まれており、
+# 既存の fetch_related_data_from_se 等のパイプラインで
+# common/data/output/race_se/race_se_YYYY.csv へ既に保存済みである。
+# そのため fetch_win_odds_yearly() は JV-Link に一切接続しない
+# （ネットワークI/Oなし、ローカル race_se_YYYY.csv -> WinOdds_YYYY.csv 変換のみ）。
+
+WIN_ODDS_FIELDS = [
+    "year",
+    "month_day",
+    "course_code",
+    "kai",
+    "nichi",
+    "race_num",
+    "race_id",
+    "horse_num",
+    "odds_raw",
+    "odds",
+    "odds_status",
+    "popularity_raw",
+    "popularity",
+    "data_kubun",
+    "announce_datetime",
+]
+
+
+def _win_odds_path(year: int | str) -> Path:
+    return _odds_output_dir() / f"WinOdds_{int(year)}.csv"
+
+
+def _se_csv_dir() -> Path:
+    return Path(__file__).parent.parent.parent / "data" / "output" / "race_se"
+
+
+def _parse_win_odds_from_se_row(row: dict) -> dict | None:
+    """race_se_YYYY.csv の1行（SE_SCHEMA由来）から確定単勝オッズ・人気順を抽出する。
+
+    SE レコードの "odds"（4byte, 1/10単位）・"popularity"（2byte）フィールドを
+    そのまま整形する。異常値・欠場（odds="0000" 等）は odds=None, odds_status で
+    理由を残す（_parse_odds_tenth と同じ規約）。
+    """
+    horse_raw = str(row.get("horse_num", "")).strip()
+    if not horse_raw or not horse_raw.isdigit():
+        return None
+    horse_num = int(horse_raw)
+    if horse_num <= 0:
+        return None
+
+    try:
+        race_id = _race_id_from_race_row(row)
+    except Exception:
+        return None
+    if len(race_id) != 16 or not race_id.isdigit():
+        return None
+
+    odds_raw = str(row.get("odds", "")).strip()
+    odds, odds_status = _parse_odds_tenth(odds_raw, width=4)
+
+    pop_raw = str(row.get("popularity", "")).strip()
+    popularity = int(pop_raw) if pop_raw.isdigit() and int(pop_raw) > 0 else None
+
+    return {
+        "year": str(row.get("year", "")).zfill(4),
+        "month_day": str(row.get("month_day", "")).zfill(4),
+        "course_code": str(row.get("course_code", "")).zfill(2),
+        "kai": str(row.get("kai", "")).zfill(2),
+        "nichi": str(row.get("nichi", "")).zfill(2),
+        "race_num": str(row.get("race_num", "")).zfill(2),
+        "race_id": race_id,
+        "horse_num": horse_num,
+        "odds_raw": odds_raw,
+        "odds": odds,
+        "odds_status": odds_status,
+        "popularity_raw": pop_raw,
+        "popularity": popularity,
+        "data_kubun": str(row.get("data_kubun", "")),
+        # SE の確定値には速報アナウンス時刻が無いため常に空文字（O2/O3 との列互換のため保持）
+        "announce_datetime": "",
+    }
+
+
+def fetch_win_odds_yearly(
+    start_year: int = 2015,
+    end_year: int | None = None,
+    *,
+    overwrite: bool = True,
+    se_dir: Path | str | None = None,
+) -> dict:
+    """確定単勝オッズ・単勝人気順を年別 CSV として保存する（1番人気ベースライン用）。
+
+    JV-Link には接続しない。既に common/data/output/race_se/race_se_YYYY.csv に
+    保存されている SE レコードの odds/popularity フィールドをローカルで再整形するだけ。
+    race_se_YYYY.csv が無い年は警告を出してスキップする（グレースフルデグラデーション）。
+
+    保存先:
+      common/data/output/odds/WinOdds_YYYY.csv
+
+    Parameters
+    ----------
+    start_year, end_year : 対象年範囲（end_year 省略時は今年まで）
+    overwrite : True（デフォルト）の場合、対象年の WinOdds_YYYY.csv を
+        race_se_YYYY.csv から毎回フルリビルドする（race_se が正なので差分マージはしない）。
+        False の場合、既に WinOdds_YYYY.csv が存在する年はスキップする。
+    se_dir : race_se_YYYY.csv の格納ディレクトリ（テスト用に上書き可能。省略時は既定パス）
+
+    Returns
+    -------
+    dict[year, {"path": str, "added": int, "skipped_reason": str | None}]
+    """
+    if end_year is None:
+        end_year = datetime.now().year
+    se_dir_path = Path(se_dir) if se_dir is not None else _se_csv_dir()
+
+    results: dict = {}
+    for year in range(int(start_year), int(end_year) + 1):
+        se_path = se_dir_path / f"race_se_{year}.csv"
+        win_path = _win_odds_path(year)
+
+        if not se_path.exists():
+            print(f"  [warn] {se_path.name} not found, skipping WinOdds_{year}.csv (no fetch performed)")
+            results[year] = {"path": str(win_path), "added": 0, "skipped_reason": "se_csv_missing"}
+            continue
+
+        if win_path.exists() and not overwrite:
+            print(f"  {win_path.name} already exists, skipping (overwrite=False)")
+            results[year] = {"path": str(win_path), "added": 0, "skipped_reason": "already_exists"}
+            continue
+
+        rows_out: list[dict] = []
+        with open(se_path, "r", encoding="utf-8-sig", newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                parsed = _parse_win_odds_from_se_row(row)
+                if parsed is None:
+                    continue
+                rows_out.append(parsed)
+
+        if rows_out:
+            win_path.parent.mkdir(parents=True, exist_ok=True)
+            save_to_csv(rows_out, str(win_path), WIN_ODDS_FIELDS, append=False)
+            print(f"  WinOdds_{year}.csv: {len(rows_out):,} rows written from {se_path.name}")
+        else:
+            print(f"  No valid win-odds rows extracted for {year} ({se_path.name})")
+
+        results[year] = {"path": str(win_path), "added": len(rows_out), "skipped_reason": None}
+
+    return results
 
 
 def _load_race_ids_from_ra_rows(
