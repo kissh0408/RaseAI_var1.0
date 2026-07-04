@@ -219,23 +219,22 @@
   "best_condition_sweep": null,
   "stern": null,
   "favorite_baseline": {
-    "market_data_status": "unavailable",
+    "market_data_status": "available",
     "model_top1": {
       "n_races": 4775,
       "model_top1_hit": 1444,
       "model_top1_rate": 0.302408
     },
     "favorite_top1": {
-      "available": false,
-      "reason": "WinOdds データが見つかりません（O1相当データ未取得。fetch_win_odds_yearly() の実行が必要）",
+      "available": true,
       "n_races_total": 4775,
-      "n_races_with_odds": 0,
-      "coverage_rate": 0.0,
-      "favorite_top1_hit": null,
-      "favorite_top1_rate": null,
-      "favorite_roi": null,
-      "favorite_roi_n_races": 0
+      "n_races_with_odds": 4775,
+      "coverage_rate": 1.0,
+      "favorite_top1_hit": 1571,
+      "favorite_top1_rate": 0.329005,
+      "favorite_roi": 0.779435,
+      "favorite_roi_n_races": 4775
     },
-    "diff_pp": null
+    "diff_pp": -2.6597
   }
 }

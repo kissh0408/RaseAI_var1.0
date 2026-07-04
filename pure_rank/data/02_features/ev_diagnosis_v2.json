@@ -1,0 +1,165 @@
+{
+  "diagnosis_date": "2026-07-01",
+  "branch": "feature/wide-odds-ev",
+  "evaluator_notes": "evaluator の正式な合否判定軸はランキング精度（Top-N/NDCG/Spearman）。ROI 評価はユーザー依頼による追加診断。",
+
+  "market_leak_check": {
+    "status": "CLEAN",
+    "detail": "odds/popularity/init_score/market_log_odds の記述はすべて train.py, create_features.py, evaluate.py の除外ガード内。特徴量への混入なし。"
+  },
+
+  "ranking_metrics": {
+    "status": "PASS",
+    "top1_accuracy": 0.3018,
+    "ndcg_at_3": 0.538,
+    "spearman_mean": 0.506,
+    "n_test_races": 4775,
+    "vs_phase7_baseline": {
+      "top1_delta": "+1.68pp (Phase7=28.5%)",
+      "ndcg_delta": "+0.041 (Phase7=0.497)",
+      "spearman_delta": "+0.017 (Phase7=0.489)"
+    },
+    "leakage_check": "Top-1=30.18% < 40% → データリーク疑いなし"
+  },
+
+  "task1_ev_max_pair_selection": {
+    "description": "全ペア中 EV=P_wide*WideOdds が最大のペアを選択する戦略",
+    "verdict": "REJECTED",
+    "reason": "極端な穴馬ペアを選択するため的中率が壊滅的に低い（longshot bias）",
+    "results": {
+      "all_races": {
+        "n_races": 4775,
+        "hit_rate": 0.011,
+        "roi": 0.504
+      },
+      "ev_sweep": [
+        {"threshold": 0.8,  "n_bets": 4775, "hit_rate": 0.011, "roi": 0.504},
+        {"threshold": 0.9,  "n_bets": 4774, "hit_rate": 0.011, "roi": 0.504},
+        {"threshold": 1.0,  "n_bets": 4767, "hit_rate": 0.010, "roi": 0.503},
+        {"threshold": 1.5,  "n_bets": 4677, "hit_rate": 0.007, "roi": 0.494},
+        {"threshold": 2.0,  "n_bets": 4473, "hit_rate": 0.006, "roi": 0.499},
+        {"threshold": 2.5,  "n_bets": 4144, "hit_rate": 0.005, "roi": 0.514},
+        {"threshold": 3.0,  "n_bets": 3816, "hit_rate": 0.004, "roi": 0.495},
+        {"threshold": 4.0,  "n_bets": 3181, "hit_rate": 0.004, "roi": 0.531}
+      ]
+    },
+    "comparison_vs_p_wide_max": {
+      "p_wide_max_ev1.0": {"n_bets": 1478, "hit_rate": 0.205, "roi": 0.857},
+      "ev_max_ev1.0":     {"n_bets": 4767, "hit_rate": 0.010, "roi": 0.503},
+      "hit_rate_ratio": "EV-max は P_wide-max の 5% 以下の的中率"
+    },
+    "root_cause": "Harville 確率はロングショット馬の P_wide を過大評価する。EV-max はその過大評価を利用した『穴馬コンビ』を選ぶため、実際の的中率が1%程度に落ちる。P_wide-max 戦略（29%的中）と比べて完全に劣る。"
+  },
+
+  "task2_calibration_comparison": {
+    "description": "バグ修正後のキャリブレーション3手法の EV>=1.0 ROI 比較",
+    "ev_threshold": 1.0,
+    "results": {
+      "baseline_all":    {"n_bets": 4775, "hit_rate": 0.2903, "roi": 0.8099},
+      "baseline_ev1.0":  {"n_bets": 1478, "hit_rate": 0.2050, "roi": 0.8572},
+      "platt_ev1.0":     {"n_bets": 590,  "hit_rate": 0.1593, "roi": 0.7995},
+      "roi_t0.30_ev1.0": {"n_bets": 4428, "hit_rate": 0.2692, "roi": 0.8072},
+      "isotonic_ev1.0":  {"n_bets": 872,  "hit_rate": 0.1456, "roi": 0.8206}
+    },
+    "best_calibration_method": "Isotonic (ROI=82.06%)",
+    "verdict": "全手法でベースライン (85.72%) を下回る。キャリブレーションは ROI 改善に寄与しない",
+    "analysis": {
+      "calibration_error": "Harville P_wide は全 bin で過大推定 (predicted > actual)。最大誤差 16.6pp (高確率域)。",
+      "why_calibration_fails": "バリデーション (2024) でフィットしたモデルがテスト (2025-2026) で汎化しない。年次変動が大きく、キャリブレーション関係が安定しない。",
+      "roi_t_note": "ROI-T=0.30 はバリデーションで ROI=80.84% だったが、テストでは 80.72% にとどまる。有効なアドバンテージなし。"
+    }
+  },
+
+  "task3_weather_code3": {
+    "description": "weather_code=3（雨）条件の P_wide-max 戦略での詳細分析",
+    "strategy": "P_wide-max（元の simulate_ev と同一ロジック）",
+    "results": {
+      "all_ev": {
+        "n_bets": 202,
+        "years": [2025, 2026],
+        "hit_rate": 0.297,
+        "roi": 0.8906
+      },
+      "ev_sweep": [
+        {"threshold": 0.8,  "n_bets": 109, "hit_rate": 0.312, "roi": 1.0734},
+        {"threshold": 1.0,  "n_bets": 60,  "hit_rate": 0.300, "roi": 1.2683},
+        {"threshold": 1.3,  "n_bets": 29,  "hit_rate": 0.276, "roi": 1.3828},
+        {"threshold": 1.5,  "n_bets": 21,  "hit_rate": 0.190, "roi": 0.8381}
+      ],
+      "year_breakdown_ev1.0": {
+        "2025": {"n": 57, "hit_rate": 0.281, "roi": 1.214},
+        "2026": {"n": 3,  "hit_rate": 0.667, "roi": 2.300}
+      }
+    },
+    "statistical_significance": {
+      "n_bets_ev1.0": 60,
+      "bootstrap_95ci": [0.750, 1.878],
+      "prob_roi_above_100pct": 0.83,
+      "verdict": "統計的に信頼できない (n=60 < 100)",
+      "detail": "Bootstrap 95% CI が [75.0%, 187.8%] と広く、ROI=100% 超えの確率は 83%。17% の確率で 100% 未満。n=100 以上に達するまで判断保留が適切。"
+    },
+    "vs_all_conditions_ev1.0": {
+      "all_conditions": {"n": 1478, "roi": 0.857},
+      "weather3": {"n": 60, "roi": 1.268},
+      "excess": "+41.1pp"
+    },
+    "note": "2026 データはわずか 3 レース（ROI=230%）。2025 のみ（n=57, ROI=121.4%）でも示唆的だが n が不足。"
+  },
+
+  "overall_roi_assessment": {
+    "target": "ROI >= 100% (EV フィルタ後)",
+    "current_best": {
+      "strategy": "P_wide-max, EV>=1.0",
+      "roi": 0.8572,
+      "n_bets": 1478
+    },
+    "verdict": "ROI 100% 未達 (要改善)",
+    "gap_to_target": "-14.28pp",
+    "key_finding": "ワイドベット全体で ROI 100% を安定して超える手法は現状存在しない。唯一 weather_code=3 (EV>=1.0) のみ ROI 126.8% だが n=60 で統計的に信頼できない。"
+  },
+
+  "recommended_next_actions": [
+    {
+      "priority": 1,
+      "action": "P_wide 過大推定の根本対処: Harville 以外の確率推定",
+      "detail": "Harville 公式は全 bin で P_wide を過大推定（最大 16.6pp）。原因は Harville の独立仮定。Plackett-Luce や Bradley-Terry への変更、あるいはレース内の頭数・距離別に calibration 係数を調整することを planner に依頼する。",
+      "agent": "planner → implementer"
+    },
+    {
+      "priority": 2,
+      "action": "weather_code=3 の監視継続（データ蓄積待ち）【2026-07-02クローズ済み】",
+      "detail": "現在 n=60 のため統計的判断不可。n=100 に達したタイミングで再評価。2025 年内にデータが増えたら evaluator が再判定する。キャリブレーション等のチューニングは n=100 超えてから。 -- 2026-07-02のVALID(2024)スクリーニングで不採用が確定（ev_lift=-17.1pp、有効条件リスト不算入）。docs/specs/2026-07-04-roi-improvement-roadmap.md 1.2節参照。TEST側のROI 126.8%(n=60)→102.1%(n=67)への退行はサンプル増加に伴う平均への回帰として説明可能であり、n=100到達を待つ意味は失われた。以後の追加検証は行わない。",
+      "agent": "評価完了・追加対応不要"
+    },
+    {
+      "priority": 3,
+      "action": "EV-max ペア選択戦略の完全廃棄",
+      "detail": "EV-max は hit_rate=1.1%, ROI=50.4% と壊滅的。P_wide-max の方が優れている。EV-max 戦略をコードに実装する必要はない。",
+      "agent": "不要（実装廃棄）"
+    },
+    {
+      "priority": 4,
+      "action": "キャリブレーション手法の見直し（年次適応型）",
+      "detail": "Platt/Isotonic/ROI-T はいずれもバリデーション（2024）→テスト（2025-2026）で汎化しない。年次・季節別キャリブレーション係数の検討、またはオンライン学習型の calibration を planner に依頼する。ただし過学習リスクあり。",
+      "agent": "planner → implementer（優先度低）"
+    },
+    {
+      "priority": 5,
+      "action": "surface_code=5（障害？）の除外確認",
+      "detail": "ROI by Condition に surface_code=5（n=53, hit=13.2%, ROI=35.8%）が出現。障害レースが混入している可能性。create_features.py のフィルタ条件を implementer に確認させる。",
+      "agent": "refactorer → implementer"
+    }
+  ],
+
+  "orchestrator_handoff": {
+    "status": "要改善 → orchestrator に現状報告",
+    "ranking_passed": true,
+    "roi_target_met": false,
+    "blocking_issues": [
+      "ROI 100% 未達 (-14pp): calibration 全手法がベースラインを下回る",
+      "EV-max 戦略は有効でない（採用不可）",
+      "weather_code=3 は n=60 で統計的判断保留"
+    ],
+    "next_phase_decision": "ランキング精度は合格（Phase移行条件を満たす）。ROI目標は別途対処。orchestratorが次Phase（ランキング精度向上）に進むか、EV改善を継続するかを判断する。"
+  }
+}

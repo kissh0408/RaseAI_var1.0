@@ -3,74 +3,74 @@
     {
       "bin": 0,
       "n": 478,
-      "predicted_prob": 0.1514,
-      "actual_hit_rate": 0.1109,
-      "diff": -0.0405
+      "predicted_prob": 0.1543,
+      "actual_hit_rate": 0.113,
+      "diff": -0.0414
     },
     {
       "bin": 1,
       "n": 477,
-      "predicted_prob": 0.2089,
-      "actual_hit_rate": 0.1824,
-      "diff": -0.0265
+      "predicted_prob": 0.2139,
+      "actual_hit_rate": 0.1614,
+      "diff": -0.0525
     },
     {
       "bin": 2,
       "n": 478,
-      "predicted_prob": 0.2481,
-      "actual_hit_rate": 0.1653,
-      "diff": -0.0828
+      "predicted_prob": 0.2537,
+      "actual_hit_rate": 0.1715,
+      "diff": -0.0821
     },
     {
       "bin": 3,
       "n": 477,
-      "predicted_prob": 0.2878,
-      "actual_hit_rate": 0.1845,
-      "diff": -0.1033
+      "predicted_prob": 0.2903,
+      "actual_hit_rate": 0.2306,
+      "diff": -0.0597
     },
     {
       "bin": 4,
       "n": 478,
-      "predicted_prob": 0.3245,
-      "actual_hit_rate": 0.2845,
-      "diff": -0.04
+      "predicted_prob": 0.33,
+      "actual_hit_rate": 0.2343,
+      "diff": -0.0957
     },
     {
       "bin": 5,
       "n": 477,
-      "predicted_prob": 0.3648,
-      "actual_hit_rate": 0.2851,
-      "diff": -0.0797
+      "predicted_prob": 0.3749,
+      "actual_hit_rate": 0.2809,
+      "diff": -0.094
     },
     {
       "bin": 6,
       "n": 477,
-      "predicted_prob": 0.4151,
-      "actual_hit_rate": 0.2872,
-      "diff": -0.1279
+      "predicted_prob": 0.4259,
+      "actual_hit_rate": 0.2956,
+      "diff": -0.1303
     },
     {
       "bin": 7,
       "n": 478,
-      "predicted_prob": 0.4797,
-      "actual_hit_rate": 0.3724,
-      "diff": -0.1073
+      "predicted_prob": 0.4864,
+      "actual_hit_rate": 0.3891,
+      "diff": -0.0973
     },
     {
       "bin": 8,
       "n": 477,
-      "predicted_prob": 0.5628,
-      "actual_hit_rate": 0.4654,
-      "diff": -0.0973
+      "predicted_prob": 0.5694,
+      "actual_hit_rate": 0.4675,
+      "diff": -0.1019
     },
     {
       "bin": 9,
       "n": 478,
-      "predicted_prob": 0.731,
-      "actual_hit_rate": 0.5649,
-      "diff": -0.1661
+      "predicted_prob": 0.7316,
+      "actual_hit_rate": 0.5418,
+      "diff": -0.1898
     }
   ],
-  "mean_abs_error": 0.0871,
-  "max_abs_error": 0.1661
+  "mean_abs_error": 0.0945,
+  "max_abs_error": 0.1898
 }

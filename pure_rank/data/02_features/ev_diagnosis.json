@@ -1,0 +1,107 @@
+{
+  "diagnosis_date": "2026-07-01",
+  "subject": "WideOdds EV=0 診断: simulate_ev.py の / 100 バグ",
+  "evaluator_verdict": "実装バグ確認 — implementer へ差し戻し",
+
+  "root_cause": {
+    "type": "オッズ単位の誤解釈（実装バグ）",
+    "location": "pure_rank/src/simulate_ev.py line 168",
+    "bug_formula": "ev_wide = p_wide * prior_odds_wide / 100.0",
+    "correct_formula": "ev_wide = p_wide * prior_odds_wide",
+    "explanation": "WideOdds CSV の odds 列は倍率（1.4 = 1.4倍 = 140円払戻/100円ベット）で格納されている。現在の式はこれを「yen/100円ベット」形式と誤解して /100 しており、全EVが100倍小さくなっている。例: p_wide=0.35, odds=2.0 の場合、正しいEV=0.70 が 0.0070 と計算される。"
+  },
+
+  "wide_odds_quality": {
+    "format": "decimal_multiplier (倍率)",
+    "unit": "1.0 = 100円/100円ベット（元返し）、1.4 = 140円/100円ベット",
+    "min": 1.0,
+    "median": 121.0,
+    "max": 117043.4,
+    "note": "最小値1.4（最人気ペア）〜 最大117,043（超穴ペア）。倍率として一貫しており、データ品質に問題なし。",
+    "coverage_rate": 1.0
+  },
+
+  "ev_distribution_comparison": {
+    "sample_races": 1000,
+    "total_pairs": 98323,
+    "bug_formula_p_times_odds_div100": {
+      "ev_above_0_8_count": 0,
+      "ev_above_0_8_pct": 0.0,
+      "ev_above_1_0_count": 0,
+      "ev_above_1_0_pct": 0.0,
+      "ev_mean": 0.0153,
+      "ev_max": 0.4736,
+      "explanation": "/ 100 誤りで全EVが100倍小さくなり、EV>=0.8 のベットは0件"
+    },
+    "correct_formula_p_times_odds": {
+      "ev_above_0_8_count": 57705,
+      "ev_above_0_8_pct": 58.7,
+      "ev_above_1_0_count": 47656,
+      "ev_above_1_0_pct": 48.5,
+      "ev_above_2_0_pct": 21.3,
+      "ev_mean": 1.5217,
+      "ev_median": 0.9675,
+      "ev_max": 58.10
+    }
+  },
+
+  "strategy_analysis": {
+    "p_wide_max_strategy": {
+      "description": "現在の戦略: P_wide 最大ペアを選択（確率最大 = 最人気ペア）",
+      "correct_formula_results": {
+        "ev_mean": 0.987,
+        "ev_above_0_8_pct": 51.8,
+        "ev_above_1_0_pct": 27.1,
+        "avg_selected_odds": 3.51,
+        "hit_rate_pct": 25.4
+      },
+      "verdict": "バグ修正後でもEV>1.0は27.1%のみ。P_wide-maxは最人気（低オッズ）ペアを選ぶため、EV向上には限界がある。"
+    },
+    "ev_max_strategy": {
+      "description": "代替戦略: EV = p_wide * odds が最大のペアを選択",
+      "correct_formula_results": {
+        "races_with_ev_above_1_0_pct": 100.0,
+        "actual_hit_rate_pct": 0.60,
+        "max_ev_mean": 8.09,
+        "max_ev_median": 6.01,
+        "ev_gt1_pair_avg_odds": 1141.5,
+        "ev_gt1_pair_median_odds": 235.5,
+        "ev_gt1_pair_avg_p_wide": 0.0264
+      },
+      "verdict": "EV>1.0は全レース100%だが的中率0.6%は想定の1/10以下。高オッズ・低確率ペアを選ぶため確率推定の較正が不十分（モデルが低確率ペアを過大評価）。大量サンプル（3,000レース以上）なければROI検証不可。"
+    }
+  },
+
+  "hypothesis_validation": {
+    "hypothesis": "P_wide-max ペアは市場でも人気ゆえオッズが低い",
+    "result": "一部正しい。P_wide-max の平均オッズ=3.51倍（低め）。ただしEV平均=0.99で1.0前後であり、バグ修正後は約27%のレースでEV>1.0になる。",
+    "actual_root_cause": "仮説より根本的な原因: 式の /100 バグが全EV=0 の真因。バグがなければ P_wide-max でも一定のEV>1.0ベットが存在する。"
+  },
+
+  "actions": {
+    "immediate": {
+      "target": "implementer",
+      "file": "pure_rank/src/simulate_ev.py",
+      "line": 168,
+      "fix": "ev_wide = (p_wide * prior_odds_wide) if prior_odds_wide is not None else float('nan')",
+      "note": "_collect_bets_with_calibration 内の同一パターン (line 406, 418, 429, 447) も同時に修正すること"
+    },
+    "after_fix": {
+      "target": "implementer",
+      "action": "simulate_ev.py を再実行して ev_results.json を更新する",
+      "expected": "EV>=1.0 フィルタ後の wide_n_bets が 1000〜1500件程度に増加するはず"
+    },
+    "strategy_redesign": {
+      "target": "orchestrator → planner",
+      "action": "EV-max 戦略の採用可否を planner に判断依頼",
+      "reason": "EV-max は全レースでEV>1.0だが的中率0.6%（4775レースで約29件的中）は検証ボリューム不足。キャリブレーション改善後に再評価が必要。P_wide-max + 修正式の方が現時点では安全。"
+    }
+  },
+
+  "ranking_model_impact": {
+    "top1_accuracy": "変化なし（EV計算はモデル未変更）",
+    "ndcg_at_3": "変化なし",
+    "spearman": "変化なし",
+    "note": "本バグはシミュレーション専用の simulate_ev.py のみに存在。モデル本体・特徴量・評価指標への影響なし。"
+  }
+}
