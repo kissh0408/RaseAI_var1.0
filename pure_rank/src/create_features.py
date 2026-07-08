@@ -1737,6 +1737,11 @@ NEW_FEATURE_COLS_BY_VERSION: dict[str, list[str]] = {
     "v46_small_pool": ["hist_small_course_pool_win_rate_ts"],
     "v47_pace_x": ["front_pref_x_density"],
     "v47_post_small": ["post_position_x_small"],
+    "v50_hc_norm": [
+        "trn_hc_basediff_recent5",
+        "trn_hc_basediff_best",
+        "trn_hc_accel_best",
+    ],
 }
 
 CORR_GATE_THRESHOLD: float = 0.7      # |r| >= 0.7 → 学習に進まず planner へ報告
@@ -1887,6 +1892,14 @@ def main() -> None:
     print("\n[3] Building historical features (shift-1 leak prevention)...")
     df = _build_hist_features(df)
 
+    # v48_agari_turn の2列は _build_hist_features 内で無条件生成される（未ゲート）。
+    # v48/v49 以外のバージョンでは列セットを v39 基準に保つため drop する
+    # （v42_mining の mining_predicted_rank と同じ扱い）。
+    if version not in ("v48_agari_turn", "v49_six_lap"):
+        _v48_cols = [c for c in ("hist_last_agari_time_gap", "hist_turn_surface_win_edge") if c in df.columns]
+        if _v48_cols:
+            df = df.drop(columns=_v48_cols)
+
     print("\n[4] Building current race features...")
     df = _build_current_features(df, version)
 
@@ -1937,6 +1950,10 @@ def main() -> None:
     hc = _load_hc(cfg)
     wc = _load_wc(cfg)
     df = _add_training_features(df, hc, wc)
+
+    if version == "v50_hc_norm":
+        print("\n[6.5] Building HC baseline-diff features (v50_hc_norm)...")
+        df = _build_hc_norm_features(df, hc)
 
     print("\n[7] Building labels (lr_label)...")
     df = _build_labels(df)
@@ -2136,6 +2153,15 @@ def main() -> None:
         assert "hist_small_course_pool_win_rate_ts" not in df.columns
         assert "course_is_small" not in df.columns
         print(f"\n[8.3] Column count assert PASS: {len(df.columns)} == 133")
+    elif version == "v50_hc_norm":
+        assert len(df.columns) == 135, (
+            f"v50_hc_norm は 135 列（v39_course_slim の 132 + 新規3列）のはずですが "
+            f"{len(df.columns)} 列あります: 差分を確認してください"
+        )
+        for col in NEW_FEATURE_COLS_BY_VERSION["v50_hc_norm"]:
+            assert col in df.columns, f"{col} がありません"
+        assert "course_is_small" not in df.columns, "中間変数 course_is_small が残っています"
+        print(f"\n[8.3] Column count assert PASS: {len(df.columns)} == 135")
 
     # 保存前に行順序を LambdaRank グループ割り当て用に修正する。
     # 中間処理では ketto_num 順（shift(1) 効率化）を使うが、
