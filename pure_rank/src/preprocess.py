@@ -196,7 +196,7 @@ def preprocess_hc(hc_dir: Path, dst_parquet: Path) -> pd.DataFrame:
 
     USE_COLS = [
         "ketto_num", "training_date", "training_center",
-        "time_4f_total", "time_3f_total", "lap_time_200_0",
+        "time_4f_total", "time_3f_total", "lap_time_400_200", "lap_time_200_0",
     ]
     dfs = []
     for f in files:
@@ -205,7 +205,7 @@ def preprocess_hc(hc_dir: Path, dst_parquet: Path) -> pd.DataFrame:
     df = pd.concat(dfs, ignore_index=True)
 
     # 数値変換
-    for col in ["ketto_num", "time_4f_total", "time_3f_total", "lap_time_200_0"]:
+    for col in ["ketto_num", "time_4f_total", "time_3f_total", "lap_time_400_200", "lap_time_200_0"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
     df["training_center"] = pd.to_numeric(df["training_center"], errors="coerce").astype("Int8")
 
@@ -229,7 +229,13 @@ def preprocess_hc(hc_dir: Path, dst_parquet: Path) -> pd.DataFrame:
     df["hc_200_sec"] = (df["lap_time_200_0"] / 10.0).astype("float32")
     df["ketto_num"]  = df["ketto_num"].astype(np.int64)
 
-    out_cols = ["ketto_num", "training_date", "training_center", "hc_3f_sec", "hc_4f_sec", "hc_200_sec"]
+    # 加速 = lap(400-200m) − lap(200-0m)。正なら終い加速型（v50_hc_norm 用）。
+    # lap_time_400_200 無効行を除外すると既存 trn_* 特徴量の行集合が変わるため、
+    # 行は残して NaN にする。
+    lap_42 = df["lap_time_400_200"].where(df["lap_time_400_200"] > 0)
+    df["hc_accel_sec"] = ((lap_42 - df["lap_time_200_0"]) / 10.0).astype("float32")
+
+    out_cols = ["ketto_num", "training_date", "training_center", "hc_3f_sec", "hc_4f_sec", "hc_200_sec", "hc_accel_sec"]
     df = df[out_cols].sort_values(["ketto_num", "training_date"]).reset_index(drop=True)
 
     dst_parquet.parent.mkdir(parents=True, exist_ok=True)
