@@ -12,8 +12,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+_SRC = str(Path(__file__).resolve().parents[1] / "src")
+sys.path.insert(0, _SRC)
 from create_features import _build_hc_norm_features
+
+# pure_rank/src/common.py がトップレベル common パッケージをシャドウし、
+# 同一セッションの他テスト（common.data.* を import する）を壊すため後始末する
+sys.path.remove(_SRC)
+sys.modules.pop("common", None)
 
 
 def _make_hc() -> pd.DataFrame:
