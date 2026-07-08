@@ -1619,6 +1619,57 @@ def _add_training_features(
     return df
 
 
+def _build_hc_norm_features(df: pd.DataFrame, hc: pd.DataFrame) -> pd.DataFrame:
+    """坂路 基準時計差 特徴量（v50_hc_norm 専用）。
+
+    生の坂路タイムは調教場・日ごとの馬場差を含むため、同日×同調教場の
+    全馬 median を基準にした相対値（基準時計差）に正規化する
+    （src/training.py の 坂路スピード/瞬発力 と同じ発想）。
+    集約は expanding（キャリア全期間）で、merge_asof の
+    allow_exact_matches=False により training_date < race_date を厳密に保証する。
+    """
+    new_cols = ["trn_hc_basediff_recent5", "trn_hc_basediff_best", "trn_hc_accel_best"]
+    if len(hc) == 0:
+        for col in new_cols:
+            df[col] = np.nan
+        return df
+
+    hc = hc.copy()
+    baseline = hc.groupby(["training_date", "training_center"])["hc_4f_sec"].transform("median")
+    hc["basediff"] = hc["hc_4f_sec"] - baseline
+
+    hc = hc.sort_values(["ketto_num", "training_date"], kind="stable").reset_index(drop=True)
+    g = hc.groupby("ketto_num")
+    hc["trn_hc_basediff_best"] = g["basediff"].cummin()
+    hc["trn_hc_basediff_recent5"] = (
+        g["basediff"].rolling(5, min_periods=1).mean().reset_index(level=0, drop=True)
+    )
+    # cummax は NaN 行で NaN を返すため、馬内 ffill で直前までのベストを引き継ぐ
+    hc["trn_hc_accel_best"] = g["hc_accel_sec"].cummax()
+    hc["trn_hc_accel_best"] = hc.groupby("ketto_num")["trn_hc_accel_best"].ffill()
+
+    hc_sorted = hc.sort_values("training_date", kind="stable").reset_index(drop=True)
+    keys = (
+        df[["race_id", "ketto_num", "race_date"]]
+        .sort_values("race_date", kind="stable")
+        .reset_index(drop=True)
+    )
+    merged = pd.merge_asof(
+        keys,
+        hc_sorted[["ketto_num", "training_date"] + new_cols],
+        left_on="race_date",
+        right_on="training_date",
+        by="ketto_num",
+        direction="backward",
+        allow_exact_matches=False,
+    )
+    df = df.merge(
+        merged[["race_id", "ketto_num"] + new_cols],
+        on=["race_id", "ketto_num"], how="left",
+    )
+    return df
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 7: ラベル生成
 # ═══════════════════════════════════════════════════════════════════════════════
