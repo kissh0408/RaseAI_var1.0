@@ -194,13 +194,19 @@ def preprocess_hc(hc_dir: Path, dst_parquet: Path) -> pd.DataFrame:
     if not files:
         raise FileNotFoundError(f"HC CSVが見つかりません: {hc_dir}")
 
-    USE_COLS = [
+    BASE_COLS = [
         "ketto_num", "training_date", "training_center",
-        "time_4f_total", "time_3f_total", "lap_time_400_200", "lap_time_200_0",
+        "time_4f_total", "time_3f_total", "lap_time_200_0",
     ]
     dfs = []
     for f in files:
-        tmp = pd.read_csv(f, encoding="utf-8-sig", usecols=USE_COLS, dtype=str)
+        # lap_time_400_200 は hc_accel_sec（v50実験）用。旧スキーマのCSVでも
+        # 日次前処理を止めないため、存在する場合のみ読み込む
+        header = pd.read_csv(f, encoding="utf-8-sig", nrows=0)
+        use = BASE_COLS + (["lap_time_400_200"] if "lap_time_400_200" in header.columns else [])
+        tmp = pd.read_csv(f, encoding="utf-8-sig", usecols=use, dtype=str)
+        if "lap_time_400_200" not in tmp.columns:
+            tmp["lap_time_400_200"] = np.nan
         dfs.append(tmp)
     df = pd.concat(dfs, ignore_index=True)
 
