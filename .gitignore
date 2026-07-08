@@ -36,8 +36,14 @@ pure_rank/data/02_features/*.bak.parquet
 pure_rank/data/01_preprocessed/*.bak_*
 pure_rank/data/01_preprocessed/*.backup_*
 
-# main/ 当日予測・推奨出力（再生成可能）
-main/data/
+# prob_fusion / betting 生成物
+prob_fusion/data/*.parquet
+betting/data/*.parquet
+pure_rank/data/03_scores/*.parquet
+
+# evaluation reports (regenerable)
+evaluation/reports/*.json
+!evaluation/reports/.gitkeep
 main/predictions/
 main/results/
 main/work/

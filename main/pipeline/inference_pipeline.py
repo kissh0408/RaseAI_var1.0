@@ -16,7 +16,15 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from model_training.src.train import CATEGORICAL_FEATURES
+_CATEGORICAL_FEATURES = frozenset({
+    "surface_code",
+    "track_condition_code",
+    "course_code",
+    "weather_code",
+    "distance_category",
+    "sex_code",
+    "class_code",
+})
 
 logger = logging.getLogger(__name__)
 
@@ -231,7 +239,7 @@ def _prepare_features(df: pd.DataFrame, feature_cols: list[str]) -> pd.DataFrame
         if col not in X.columns:
             X[col] = np.nan
     for col in feature_cols:
-        if col in CATEGORICAL_FEATURES:
+        if col in _CATEGORICAL_FEATURES:
             X[col] = pd.to_numeric(X[col], errors="coerce").fillna(-1).astype(int)
         else:
             X[col] = pd.to_numeric(X[col], errors="coerce")
@@ -303,171 +311,10 @@ def predict_ranks_for_frame(
 
 
 def apply_uniform_baba_jv_code(df: pd.DataFrame, jv_code: int) -> pd.DataFrame:
-    """
-    全行を同一の馬場シナリオに置き換える。
-    芝レース（track_code < 23）では ``turf_condition`` のみ jv_code、``dirt_condition`` は 0。
-    ダートではその逆。
+    """後方互換: ``main.pipeline.baba_scenario`` へ委譲。"""
+    from main.pipeline.baba_scenario import apply_uniform_baba_jv_code as _apply
 
-    v8/v9 で追加した one-hot フラグ・interaction 特徴量も同時に再計算する。
-    列が存在しない場合はスキップする（後方互換）。
-    """
-    out = df.copy()
-    if "track_code" not in out.columns:
-        return out
-    tc = pd.to_numeric(out["track_code"], errors="coerce").fillna(0).astype(np.int64)
-    is_dirt = tc >= DIRT_TRACK_CODE_MIN
-    is_turf = ~is_dirt
-    n = len(out)
-
-    from model_training.src.going_scenario_recompute import (
-        recompute_going_change_features_scenario,
-        unified_going_condition,
-    )
-
-    base_unified = unified_going_condition(out, is_turf=is_turf, is_dirt=is_dirt)
-
-    if "turf_condition" in out.columns:
-        arr = np.zeros(n, dtype=np.float64)
-        arr[is_turf.to_numpy()] = float(jv_code)
-        out.loc[:, "turf_condition"] = arr
-    if "dirt_condition" in out.columns:
-        arr = np.zeros(n, dtype=np.float64)
-        arr[is_dirt.to_numpy()] = float(jv_code)
-        out.loc[:, "dirt_condition"] = arr
-
-    # track_condition_code（学習特徴）を芝/ダート側の JV コードと同期する
-    if "track_condition_code" in out.columns:
-        tc_arr = np.zeros(n, dtype=np.float64)
-        tc_arr[is_turf.to_numpy()] = float(jv_code)
-        tc_arr[is_dirt.to_numpy()] = float(jv_code)
-        out.loc[:, "track_condition_code"] = tc_arr
-
-    # code=1（良）は暗黙フラグ扱いのため code 2/3/4 のみ生成する
-    for code in [2, 3, 4]:
-        col_t = f"turf_cond_{code}"
-        col_d = f"dirt_cond_{code}"
-        arr_t = np.zeros(n, dtype=np.float32)
-        arr_t[is_turf.to_numpy()] = float(jv_code == code)
-        out.loc[:, col_t] = arr_t
-        arr_d = np.zeros(n, dtype=np.float32)
-        arr_d[is_dirt.to_numpy()] = float(jv_code == code)
-        out.loc[:, col_d] = arr_d
-
-    t2 = out["turf_cond_2"]
-    t3 = out["turf_cond_3"]
-    t4 = out["turf_cond_4"]
-    d2 = out["dirt_cond_2"]
-    d3 = out["dirt_cond_3"]
-    d4 = out["dirt_cond_4"]
-
-    def _col(col: str) -> pd.Series:
-        return out[col] if col in out.columns else pd.Series(0.0, index=out.index)
-
-    heavy_wr = _col("horse_turf_heavy_win_rate")
-    vheavy_wr = _col("horse_turf_very_heavy_win_rate")
-    out.loc[:, "going_x_turf_heavy_winrate"] = (t3 * heavy_wr).astype(np.float32)
-
-    light_flag = (1 - t2 - t3 - t4).clip(0, 1)
-    light_wr = _col("horse_turf_light_win_rate")
-    out.loc[:, "going_x_turf_light_winrate"] = (light_flag * light_wr).astype(np.float32)
-
-    soft_wr = _col("horse_turf_soft_win_rate")
-    out.loc[:, "going_x_turf_soft_winrate"] = (t2 * soft_wr).astype(np.float32)
-
-    d_heavy_wr = _col("horse_dirt_heavy_win_rate")
-    d_vheavy_wr = _col("horse_dirt_very_heavy_win_rate")
-    out.loc[:, "going_x_dirt_heavy_winrate"] = (d3 * d_heavy_wr).astype(np.float32)
-
-    out.loc[:, "going_match_score_turf"] = (
-        t2 * soft_wr + t3 * heavy_wr + t4 * vheavy_wr.fillna(heavy_wr)
-    ).astype(np.float32)
-
-    d_soft_wr = _col("horse_dirt_soft_win_rate")
-    out.loc[:, "going_match_score_dirt"] = (
-        d2 * d_soft_wr + d3 * d_heavy_wr + d4 * d_vheavy_wr.fillna(d_heavy_wr)
-    ).astype(np.float32)
-
-    bayes_wr = _col("horse_turf_soft_win_rate_bayes")
-    out.loc[:, "going_x_soft_win_rate_imputed"] = (t2 * bayes_wr).astype(np.float32)
-
-    # relay features: create_pastfeatures.py の relay logic と同一の fallback chain で
-    # シナリオの jv_code に対応する馬個別勝率を選択し直す
-    turf_idx = is_turf.to_numpy()
-    dirt_idx = is_dirt.to_numpy()
-
-    def _get(col: str) -> pd.Series:
-        return out[col] if col in out.columns else pd.Series(np.nan, index=out.index)
-
-    if "current_going_win_rate_turf" in out.columns:
-        light_wr2 = _get("horse_turf_light_win_rate")
-        soft_wr10 = _get("horse_turf_soft_win_rate_v10")
-        hv3_wr = _get("horse_turf_heavy3_win_rate")
-        vh_wr = _get("horse_turf_very_heavy_win_rate")
-
-        relay_turf = pd.Series(np.nan, index=out.index, dtype="float32")
-        if jv_code == 1:
-            relay_turf[turf_idx] = light_wr2[turf_idx].fillna(_TURF_WIN_RATE_FALLBACK)
-        elif jv_code == 2:
-            relay_turf[turf_idx] = soft_wr10[turf_idx].fillna(light_wr2[turf_idx]).fillna(_TURF_WIN_RATE_FALLBACK)
-        elif jv_code == 3:
-            relay_turf[turf_idx] = hv3_wr[turf_idx].fillna(soft_wr10[turf_idx]).fillna(light_wr2[turf_idx]).fillna(_TURF_WIN_RATE_FALLBACK)
-        elif jv_code == 4:
-            relay_turf[turf_idx] = vh_wr[turf_idx].fillna(hv3_wr[turf_idx]).fillna(soft_wr10[turf_idx]).fillna(light_wr2[turf_idx]).fillna(_TURF_WIN_RATE_FALLBACK_HEAVY)
-        out.loc[:, "current_going_win_rate_turf"] = relay_turf
-
-    if "current_going_win_rate_dirt" in out.columns:
-        d_light_wr = _get("horse_dirt_light_win_rate")
-        d_soft_wr2 = _get("horse_dirt_soft_win_rate")
-        d_hv3_wr = _get("horse_dirt_heavy3_win_rate")
-        d_vh_wr = _get("horse_dirt_very_heavy_win_rate")
-
-        relay_dirt = pd.Series(np.nan, index=out.index, dtype="float32")
-        if jv_code == 1:
-            relay_dirt[dirt_idx] = d_light_wr[dirt_idx].fillna(_DIRT_WIN_RATE_FALLBACK)
-        elif jv_code == 2:
-            relay_dirt[dirt_idx] = d_soft_wr2[dirt_idx].fillna(d_light_wr[dirt_idx]).fillna(_DIRT_WIN_RATE_FALLBACK)
-        elif jv_code == 3:
-            relay_dirt[dirt_idx] = d_hv3_wr[dirt_idx].fillna(d_soft_wr2[dirt_idx]).fillna(d_light_wr[dirt_idx]).fillna(_DIRT_WIN_RATE_FALLBACK)
-        elif jv_code == 4:
-            relay_dirt[dirt_idx] = d_vh_wr[dirt_idx].fillna(d_hv3_wr[dirt_idx]).fillna(d_soft_wr2[dirt_idx]).fillna(d_light_wr[dirt_idx]).fillna(_DIRT_WIN_RATE_FALLBACK_HEAVY)
-        out.loc[:, "current_going_win_rate_dirt"] = relay_dirt
-
-    if "current_going_top3_rate_turf" in out.columns:
-        soft_top3_10 = _get("horse_turf_soft_top3_rate_v10")
-        soft_top3_v9 = _get("horse_turf_soft_top3_rate")
-        hv3_top3 = _get("horse_turf_heavy3_top3_rate")
-
-        relay_top3 = pd.Series(np.nan, index=out.index, dtype="float32")
-        if jv_code == 1:
-            relay_top3[turf_idx] = _TURF_TOP3_FALLBACK_LIGHT
-        elif jv_code == 2:
-            relay_top3[turf_idx] = soft_top3_10[turf_idx].fillna(soft_top3_v9[turf_idx]).fillna(_TURF_TOP3_FALLBACK_SOFT)
-        elif jv_code in (3, 4):
-            relay_top3[turf_idx] = hv3_top3[turf_idx].fillna(soft_top3_10[turf_idx]).fillna(soft_top3_v9[turf_idx]).fillna(_TURF_TOP3_FALLBACK_HEAVY)
-        out.loc[:, "current_going_top3_rate_turf"] = relay_top3
-
-    _recompute_going_delta_active_score(out, jv_code)
-    _recompute_tm_score_surface_adj(out, jv_code)
-
-    from model_training.src.features_dirt_impute import (
-        recompute_going_match_score_dirt_imputed_scenario,
-    )
-    from model_training.src.features_soft_turf_impute import (
-        recompute_going_match_score_turf_imputed_scenario,
-    )
-
-    if "going_match_score_turf_imputed" in out.columns:
-        out.loc[:, "going_match_score_turf_imputed"] = (
-            recompute_going_match_score_turf_imputed_scenario(out)
-        )
-    if "going_match_score_dirt_imputed" in out.columns:
-        out.loc[:, "going_match_score_dirt_imputed"] = (
-            recompute_going_match_score_dirt_imputed_scenario(out)
-        )
-
-    recompute_going_change_features_scenario(out, base_unified)
-
-    return out
+    return _apply(df, jv_code)
 
 
 def _recompute_going_delta_active_score(out: pd.DataFrame, jv_code: int) -> None:

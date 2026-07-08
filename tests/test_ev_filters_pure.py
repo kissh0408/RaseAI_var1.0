@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from strategy.src.ev_filters import EvFilterConfig, effective_min_edge, ev_filter_config_from_mapping
+from betting.src.ev_filters import EvFilterConfig, effective_min_edge, ev_filter_config_from_mapping
 
 
 class TestEffectiveMinEdge:

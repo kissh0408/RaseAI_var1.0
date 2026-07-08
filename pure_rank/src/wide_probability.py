@@ -23,9 +23,17 @@ except ModuleNotFoundError:
     )
 
 try:
-    from wide_ev_core import PAIR_KEY, get_pair_odds, norm_pair
+    from betting.src.pair_probs import PAIR_KEY, norm_pair
 except ModuleNotFoundError:
-    from strategy.src.wide_ev_core import PAIR_KEY, get_pair_odds, norm_pair
+    PAIR_KEY = tuple[int, int]
+
+    def norm_pair(a: int, b: int) -> PAIR_KEY:
+        return (a, b) if a < b else (b, a)
+
+
+def get_pair_odds(race_id, h1, h2, lookup):
+    """Stub: wide odds lookup removed from L1; Phase 4 uses betting layer."""
+    return None
 
 
 def compute_calibrated_wide_probs(

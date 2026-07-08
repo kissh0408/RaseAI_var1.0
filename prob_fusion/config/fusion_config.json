@@ -1,0 +1,15 @@
+{
+  "version": "benter_v1",
+  "scores_version": "v39_course_slim",
+  "scores_path": "pure_rank/data/03_scores/scores_v39_course_slim.parquet",
+  "q_method": "proportional",
+  "q_power": 0.81,
+  "stern_lam2": 1.0,
+  "stern_lam3": 1.0,
+  "fit": {
+    "alpha_bounds": [0.0, 5.0],
+    "beta_bounds": [0.0, 3.0],
+    "market_only_beta": true
+  },
+  "walkforward_folds": "evaluation.splits.get_walkforward_folds"
+}

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from strategy.src.race_filters import (
+from betting.src.race_filters import (
     attach_race_num,
     filter_df_by_race_num,
     filter_df_exclude_surface,

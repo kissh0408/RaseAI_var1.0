@@ -2,59 +2,56 @@
 
 ## プロジェクト概要
 
-**2層統合リポジトリ**（2026-07-05 統合完了）。JV-Link データから着順予測と馬券推奨までを1リポジトリで運用する。
+**4層 Benter型統合リポジトリ**（2026-07-08 再構築）。JV-Link データから着順予測・確率統合・馬券推奨までを1リポジトリで運用する。
 
 | 層 | ディレクトリ | 役割 | 市場情報 |
 |----|-------------|------|---------|
-| **Layer 1** | `pure_rank/` | LambdaRank 着順予測（v39_course_slim） | **特徴量に不使用** |
-| **Layer 2** | `model_training/` + `strategy/` | Binary 残差 + EV/Kelly 推奨 | オッズは **init_score / EV のみ**（特徴量から `var1_pure_score_z` 除外） |
+| **L0** | `common/data/` | JV-Link 取得・パース | — |
+| **L1** | `pure_rank/` | LambdaRank 着順予測（v39_course_slim） | **特徴量に不使用** |
+| **L2** | `prob_fusion/` | 条件付きロジット `p∝exp(αz+βln q)` | q は **統合変数のみ**（LightGBM 禁止） |
+| **L3** | `betting/` | EV/Kelly・リスク管理 | オッズは **EV/サイズのみ** |
+| **L4** | `main/` | 当日パイプライン統合 | — |
+| **評価** | `evaluation/` | 分割定義・市場ベースライン | — |
 
-**目標**: Layer 1 で Top-1>30%（対1番人気≈33%）、Layer 2 で Phase 1a-A2 基準（ROI≈158% Fold3, ev=1.05, max_picks=2）  
-**当日パイプライン**: `main/unified_pipeline.py` / Notebook Step 1–9 / `run_unified_today()`
+**目標**: L1 Top-1>30%、L2 統合 Top-1≥33%（1番人気超え）、L3 walk-forward ROI>100%（n≥200/fold）  
+**当日パイプライン**: `main/unified_pipeline.py` → L1→L2→L3
 
 ---
 
-## 2層の役割分担と設定ファイル
+## 層別設定ファイル
 
 | 触る場面 | 設定ファイル | 主コマンド |
 |---------|-------------|-----------|
 | LambdaRank 特徴量・学習 | `pure_rank/config/train_config.json` | `python pure_rank/src/create_features.py` |
-| Binary 残差・EV・init_score | `model_training/config/train_config.json` | `python strategy/src/backtest.py` |
-| パス参照（任意） | `config/paths.json` | — |
-| 当日統合フロー | — | `python main/unified_pipeline.py` |
+| 確率統合 α,β | `prob_fusion/config/fusion_config.json` | `python prob_fusion/src/run_fit.py` |
+| EV/Kelly | `betting/config/betting_config.json` | `python betting/src/run_backtest.py` |
+| 評価分割 | `evaluation/splits.py` | `python evaluation/run_market_baseline.py` |
+| 当日統合 | — | `python main/unified_pipeline.py` |
 
-**本番凍結（統合後も変更しない）**
-- Layer 1: `v39_course_slim`, 市場情報なし
-- Layer 2: `var1_init_score.enabled=true`, `beta=0.15`, `bet_tuning.enabled=false`, `ev_threshold=1.05`, `max_picks_per_race=2`
-- `var1_pure_score_z` は **init_score のみ**（binary の `feature_cols` には含めない — P0 因果確定）
+**本番凍結（Phase 合格時に追記）**
+- L1: `v39_course_slim`, 市場情報なし
+- L2/L3: 各 Phase 合格 manifest を参照
 
 **出力先**
-- 着順予測: `main/predictions/{YYYYMMDD}/...`
-- EV 推奨: `main/results/today_recommendations*.csv`
+- L1 スコア: `pure_rank/data/03_scores/scores_{version}.parquet`
+- L2 確率: `prob_fusion/data/probs_{version}.parquet`
+- L3 推奨: `main/results/today_recommendations.csv`
 
 ---
 
 ## プロジェクト憲法（全エージェント・全作業に適用）
 
-### 1. 市場情報排除（Layer 1 = pure_rank のみ厳守）
+### 1. 市場情報境界
 
-以下を **`pure_rank/src/` の特徴量として絶対に使用しない**：
+**L0/L1 (`pure_rank/src/`)**: オッズ・人気・`market_log_odds`・`init_score` を特徴量に **絶対使用しない**。
 
-| 禁止データ | 禁止理由 |
-|-----------|---------|
-| 単勝オッズ・複勝オッズ | 市場の集合知。排除対象 |
-| 馬連・ワイド・三連複オッズ | 同上 |
-| 人気順位 | オッズから導出される市場情報 |
-| 前日オッズ・当日オッズ変動 | 同上 |
-| `market_log_odds` / `market_prob` | RaceAI_var2.0.0の残差学習で使う変数。このプロジェクトでは禁止 |
-| `init_score`（市場オッズ由来） | 同上 |
-
-実装前後に必ず確認：
 ```bash
 grep -rn "odds\|popularity\|ninki\|market_log_odds\|init_score" pure_rank/src/ --include="*.py"
 ```
 
-**Layer 2（model_training / strategy）**: オッズは `market_log_odds` として init_score および EV 計算に使用可。`var1_pure_score_z` を LightGBM 特徴量に入れてはならない。
+**L2 (`prob_fusion/`)**: 市場確率 q・ln(q) は **条件付きロジット統合のみ**。LightGBM 等の特徴量に入れない。z の二重使用禁止（α·z の一箇所のみ）。
+
+**L3 (`betting/`)**: オッズは EV 計算・Kelly サイズのみ。
 
 ### 2. 時系列リーク防止
 
@@ -136,13 +133,14 @@ Top-1 > 40% または Spearman > 0.6 → 即座に実装停止・evaluatorへ報
 
 ```
 RaceAI_var1.0/
-├── pure_rank/              # Layer 1: LambdaRank（市場情報なし）
-├── model_training/         # Layer 2: Binary 学習・特徴量
-├── strategy/               # Layer 2: EV/Kelly・backtest
-├── main/                   # Notebook・unified_pipeline・predictions/results
-├── common/data/src/        # JV-Link データ取得
-├── config/paths.json       # パス参照（任意）
-├── docs/specs/             # Phase 仕様書
+├── common/data/            # L0: JV-Link
+├── pure_rank/              # L1: LambdaRank（市場情報なし）
+├── prob_fusion/            # L2: Benter条件付きロジット統合
+├── betting/                # L3: EV/Kelly・backtest
+├── evaluation/             # 共通評価（分割・市場ベースライン）
+├── main/                   # L4: unified_pipeline・predictions/results
+├── config/paths.json
+├── docs/specs/             # 現行 Phase 仕様
 └── CLAUDE.md
 ```
 
@@ -377,13 +375,13 @@ Phase 7ベースラインと比較してください。
 8. **Phase 6（JRAマイニング）をユーザー承認なしに開始する**
 9. **`features_*.parquet` をバックアップなしに上書きする**
 
-### Layer 2（model_training / strategy）
+### L2/L3（prob_fusion / betting）
 
-10. **`var1_pure_score_z` を binary feature_cols に含める**（init_score 専用）
-11. **テストデータで EV 閾値を後付け調整する**（Rule 3 / bet_tuning は VALID のみ）
-12. **Phase 1b bet_tuning を本番有効化しない**（Phase 1a-A2 固定）
-13. **`main/results/` にテスト用データを書き込まない**
-14. **回収率100%未満のモデルを Layer 2 本番としてリリースしない**
+10. **q を LightGBM 等の特徴量に入れる**
+11. **z の二重使用**（L1 スコアは α·z の一箇所のみ）
+12. **テストデータで EV 閾値を後付け調整する**（Rule 3: VALID のみ）
+13. **n<200/fold で ROI 有意性を主張する**
+14. **L2 logloss が市場ベースラインを下回らない状態で L3 本番化する**
 
 ### 共通
 
@@ -395,8 +393,6 @@ Phase 7ベースラインと比較してください。
 
 | プロジェクト | 場所 | 概要 |
 |------------|------|------|
-| **RaceAI（本リポ）** | `RaceAI_var1.0/` | Layer1 pure_rank + Layer2 binary/EV 統合 |
-| RaceAI_var2.0.0（旧） |  sibling / ネスト削除済 | 本リポに昇格 |
-| RaceAI_var3.0 | `RaceAI_var3.0/` | — |
+| **RaceAI（本リポ）** | `RaceAI_var1.0/` | L1 pure_rank + L2 prob_fusion + L3 betting |
 
-> 統合憲法: `docs/specs/2026-07-05-var1-integration-architecture-design.md`
+> 再構築仕様: `docs/specs/2026-07-08-benter-rebuild-master-plan.md`

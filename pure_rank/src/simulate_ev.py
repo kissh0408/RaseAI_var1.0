@@ -30,9 +30,9 @@ import pandas as pd
 
 from common import PROJECT_ROOT, get_feature_cols, load_config, resolve_project_path
 
-_STRATEGY_SRC = PROJECT_ROOT / "strategy" / "src"
-if str(_STRATEGY_SRC) not in sys.path:
-    sys.path.insert(0, str(_STRATEGY_SRC))
+_BETTING_SRC = PROJECT_ROOT / "betting" / "src"
+if str(_BETTING_SRC) not in sys.path:
+    sys.path.insert(0, str(_BETTING_SRC))
 
 from wide_ev_core import (  # noqa: E402
     collect_divergence_bets_per_race,

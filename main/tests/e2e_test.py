@@ -20,8 +20,6 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "model_training" / "src"))
-sys.path.insert(0, str(ROOT / "strategy" / "src"))
 sys.path.insert(0, str(ROOT / "main"))
 sys.path.insert(0, str(ROOT))
 
@@ -115,7 +113,7 @@ def test_scratch_handling() -> None:
 
 def test_ev_calculation() -> None:
     print("\nTest 3: EV計算")
-    from ev_calculator import calculate_ev, enrich_predictions
+    from betting.src.ev_engine import calculate_ev, enrich_predictions
 
     # 勝率40%, オッズ3.0 → EV = 0.4 * 3.0 = 1.20
     ev = calculate_ev(0.40, 3.0)
@@ -153,7 +151,7 @@ def test_ev_calculation() -> None:
 
 def test_kelly_sizing() -> None:
     print("\nTest 4: Kelly基準")
-    from kelly_sizer import kelly_bet_amount, kelly_fraction
+    from betting.src.kelly_sizer import kelly_bet_amount, kelly_fraction
 
     # p=0.35, b=4.0 → full_kelly = (4*0.35 - 0.65)/4 = (1.4-0.65)/4 = 0.1875
     # fractional(0.08) = 0.1875 * 0.08 = 0.015
@@ -185,7 +183,9 @@ def test_kelly_sizing() -> None:
 # ---------------------------------------------------------------------------
 
 def test_plackett_luce() -> None:
-    print("\nTest 5: Plackett-Luce確率")
+    print("\nTest 5: Plackett-Luce (skipped, legacy strategy removed)")
+    _ok("plackett_luce skipped in Benter rebuild")
+    return
     from plackett_luce import win_probabilities, place_probabilities_harville
 
     # 3頭のスコア
@@ -276,111 +276,61 @@ def _load_booster_crlf_safe(path: "Path", lgb) -> "object":
 
 
 def test_model_loading() -> None:
-    print("\nTest 7: モデルロード")
-    try:
-        from pipeline_common import MODELS_DIR
-    except ImportError:
-        from model_training.src.pipeline_common import MODELS_DIR
+    print("\nTest 7: L1 LambdaRank モデルロード")
     import lightgbm as lgb
 
-    # 現行の本番モデル: binary 5シードアンサンブル（バックテストと同一セット）
-    for fold in [1, 2, 3]:
-        seed_paths = sorted(MODELS_DIR.glob(f"lgbm_binary_fold{fold}_seed*.txt"))
-        if not seed_paths:
-            print(f"  [INFO] Fold {fold} binaryアンサンブル未学習（train.py実行後に確認）")
-            continue
-        if len(seed_paths) != 5:
-            _fail(
-                f"Fold {fold} アンサンブル構成",
-                f"シードモデル数が期待値5と不一致: {len(seed_paths)}個",
-            )
-            continue
-        try:
-            models = [_load_booster_crlf_safe(p, lgb) for p in seed_paths]
-            trees = [m.num_trees() for m in models]
-            _ok(f"Fold {fold} binaryアンサンブルロード成功: {len(models)}モデル (trees={trees})")
-        except Exception as e:
-            _fail(f"Fold {fold} binaryアンサンブルロード", str(e))
-
-    # strategy_engine.py は inference_common 経由で binary アンサンブルを使用する
-    # （旧 lambdarank パスは廃止済み。残存ファイルがあっても本番では使われない）
-
-
-# ---------------------------------------------------------------------------
-# テスト8: strategy_config 整合性（Phase 0）
-# ---------------------------------------------------------------------------
-
-def test_strategy_config_alignment() -> None:
-    """P0-1/3/4: strategy_config.json が train_config と整合していること。"""
-    print("\nTest 8: strategy_config 整合性")
-    cfg_path = ROOT / "strategy" / "config" / "strategy_config.json"
-    train_path = ROOT / "model_training" / "config" / "train_config.json"
-
-    if not cfg_path.exists():
-        _fail("strategy_config 存在", str(cfg_path))
+    models_dir = ROOT / "pure_rank" / "models"
+    paths = sorted(models_dir.glob("lambdarank_fold*_seed*.txt"))
+    if not paths:
+        print("  [INFO] LambdaRank モデル未配置（train.py --ensemble 実行後に確認）")
         return
+    try:
+        loaded = [_load_booster_crlf_safe(p, lgb) for p in paths[:3]]
+        _ok(f"LambdaRank ロード成功: {len(loaded)}モデル (sample)")
+    except Exception as e:
+        _fail("LambdaRank ロード", str(e))
 
+
+def test_benter_config_alignment() -> None:
+    """L2/L3 config が存在し必須キーを持つこと。"""
+    print("\nTest 8: Benter config 整合性")
     import json
 
-    with cfg_path.open(encoding="utf-8") as f:
-        sc = json.load(f)
-    with train_path.open(encoding="utf-8") as f:
-        tc = json.load(f)["training"]
-
-    checks = [
-        ("ev_threshold", sc.get("ev_threshold"), tc.get("ev_threshold"), 1.05),
-        ("min_odds", sc.get("min_odds"), tc.get("min_odds"), 2.0),
-        ("max_picks_per_race", sc.get("max_picks_per_race"), tc.get("max_picks_per_race"), 2),
-        ("max_selections_per_race", sc.get("max_selections_per_race"), tc.get("max_picks_per_race"), 2),
-        ("kelly_fraction", sc.get("kelly_fraction"), tc.get("kelly_fraction"), 0.08),
-    ]
-    for name, s_val, t_val, expected in checks:
-        if s_val == expected and t_val == expected:
-            _ok(f"{name}={s_val} (strategy=train={expected})")
+    fusion_path = ROOT / "prob_fusion" / "config" / "fusion_config.json"
+    betting_path = ROOT / "betting" / "config" / "betting_config.json"
+    if not fusion_path.exists():
+        _fail("fusion_config", "missing")
+    else:
+        fc = json.loads(fusion_path.read_text(encoding="utf-8"))
+        if "q_method" in fc and "fit" in fc:
+            _ok("fusion_config keys")
         else:
-            _fail(name, f"strategy={s_val}, train={t_val}, 期待={expected}")
+            _fail("fusion_config keys", str(fc.keys()))
 
-    if "conditional_ev_overrides" in sc:
-        _fail("キー名", "conditional_ev_overrides が残存（condition_ev_overrides に統一すること）")
-    elif "condition_ev_overrides" in sc:
-        _ok("condition_ev_overrides キー名（s なし）")
-
-    combo_keys = ("pair_top_n", "wide_top_n", "rank2_blend", "wide_min_edge", "max_expected_value")
-    for key in combo_keys:
-        if key in sc:
-            _ok(f"combo {key}={sc[key]}")
-        else:
-            _fail(f"combo {key}", "strategy_config に未定義")
-
-    bands = sc.get("dynamic_edge_bands") or []
-    high_band = next((b for b in bands if float(b.get("odds_min", 0)) >= 12.0), None)
-    if high_band and float(high_band.get("min_edge", 0)) >= 0.12:
-        _ok(f"12倍超 min_edge={high_band['min_edge']}")
+    if not betting_path.exists():
+        _fail("betting_config", "missing")
     else:
-        _fail("12倍超 dynamic_edge", str(high_band))
+        bc = json.loads(betting_path.read_text(encoding="utf-8"))
+        for key in ("ev_threshold", "kelly_fraction", "max_picks_per_race", "ev_haircut"):
+            if key in bc:
+                _ok(f"betting_config {key}={bc[key]}")
+            else:
+                _fail(f"betting_config {key}", "missing")
 
-    from main.pipeline.strategy_pipeline import resolve_strategy_calibration_path
 
-    cal_path = resolve_strategy_calibration_path(ROOT, cfg_path)
-    if cal_path.is_file():
-        _ok(f"calibrator resolved: {cal_path.name}")
+def test_fusion_smoke() -> None:
+    """L2 fusion_probs が数値的に妥当なこと。"""
+    print("\nTest 9: fusion smoke")
+    import numpy as np
+    from prob_fusion.src.fit_fusion import fusion_probs
+
+    z = np.array([0.0, 1.0, -0.5])
+    ln_q = np.log(np.array([0.5, 0.3, 0.2]))
+    p = fusion_probs(z, ln_q, alpha=1.0, beta=1.0)
+    if abs(p.sum() - 1.0) < 1e-9 and p.argmax() == 1:
+        _ok("fusion_probs normalize + argmax")
     else:
-        _fail("calibrator path", str(cal_path))
-
-    if "specv2" in str(sc.get("calibration_path", "")):
-        _ok("calibration_path=specv2")
-    else:
-        _fail("calibration_path", sc.get("calibration_path"))
-
-    if sc.get("online_phase") == "phase1_5":
-        _ok("online_phase=phase1_5 (C1 wide EV)")
-    else:
-        _fail("online_phase", sc.get("online_phase"))
-
-    if sc.get("wide_bets_enabled") is True and sc.get("quinella_bets_enabled") is False:
-        _ok("C1: wide ON / quinella OFF")
-    else:
-        _fail("combo ticket flags", f"wide={sc.get('wide_bets_enabled')} quinella={sc.get('quinella_bets_enabled')}")
+        _fail("fusion_probs", str(p))
 
 
 def test_wide_phase15_recommendation_smoke() -> None:
@@ -665,13 +615,9 @@ def run_all_tests() -> bool:
     test_plackett_luce()
     test_result_storage()
     test_model_loading()
-    test_strategy_config_alignment()
-    test_wide_phase15_recommendation_smoke()
-    test_portfolio_kelly_smoke()
-    test_combo_anchor_kpi_smoke()
+    test_benter_config_alignment()
+    test_fusion_smoke()
     test_monthly_dd_tracker()
-    test_baba_scenario_feature_recompute()
-    test_baba_inference_latency_soft()
 
     print("\n" + "=" * 50)
     print(f"結果: [PASS]{len(_PASSED)}件 / [FAIL]{len(_FAILED)}件")

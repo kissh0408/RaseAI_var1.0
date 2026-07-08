@@ -1,0 +1,94 @@
+{
+  "folds": [
+    {
+      "fold": 1,
+      "judgment_tier": "reference_l1_contaminated",
+      "l1_contamination_note": "L1 scores from v39 production model (train<=2023, ES uses 2024); TEST period is in-sample for L1",
+      "alpha": 1.1632893542173162,
+      "beta": 0.2707612551604765,
+      "market_beta_fit_on": "train+valid",
+      "market_beta": 1.0210963605708774,
+      "lam2": 0.5533446200207655,
+      "lam3": 0.5787346824316251,
+      "lrt_p_value": 0.0,
+      "test_logloss_fusion": 1.9919753455456346,
+      "test_logloss_market": 1.9229892676379314,
+      "test_logloss_beats_market": false,
+      "test_top1": 0.3308780200353565,
+      "calibration_max_error_pp": 20.866646926551514
+    },
+    {
+      "fold": 2,
+      "judgment_tier": "reference_l1_contaminated",
+      "l1_contamination_note": "L1 scores from v39 production model (train<=2023, ES uses 2024); TEST period is in-sample for L1",
+      "alpha": 1.110543383488698,
+      "beta": 0.3080627125551628,
+      "market_beta_fit_on": "train+valid",
+      "market_beta": 1.0215876027356672,
+      "lam2": 0.5222823690925876,
+      "lam3": 0.5369790983059242,
+      "lrt_p_value": 0.0,
+      "test_logloss_fusion": 1.9652533970520922,
+      "test_logloss_market": 1.8752572706033888,
+      "test_logloss_beats_market": false,
+      "test_top1": 0.3272405660377358,
+      "calibration_max_error_pp": 17.325825278592365
+    },
+    {
+      "fold": 3,
+      "judgment_tier": "formal",
+      "l1_contamination_note": null,
+      "alpha": 1.05562682657624,
+      "beta": 0.3494051978595059,
+      "market_beta_fit_on": "train+valid",
+      "market_beta": 1.0248363755673804,
+      "lam2": 0.5344772696171654,
+      "lam3": 0.5697649377943738,
+      "lrt_p_value": 0.0,
+      "test_logloss_fusion": 2.00910900291821,
+      "test_logloss_market": 1.931090621394512,
+      "test_logloss_beats_market": false,
+      "test_top1": 0.3105759162303665,
+      "calibration_max_error_pp": 12.961931734611243
+    }
+  ],
+  "config": {
+    "version": "benter_v1",
+    "scores_version": "v39_course_slim",
+    "scores_path": "pure_rank/data/03_scores/scores_v39_course_slim.parquet",
+    "q_method": "proportional",
+    "q_power": 0.81,
+    "stern_lam2": 1.0,
+    "stern_lam3": 1.0,
+    "fit": {
+      "alpha_bounds": [
+        0.0,
+        5.0
+      ],
+      "beta_bounds": [
+        0.0,
+        3.0
+      ],
+      "market_only_beta": true
+    },
+    "walkforward_folds": "evaluation.splits.get_walkforward_folds"
+  },
+  "formal_judgment_fold": 3,
+  "formal_fold_summary": {
+    "fold": 3,
+    "judgment_tier": "formal",
+    "l1_contamination_note": null,
+    "alpha": 1.05562682657624,
+    "beta": 0.3494051978595059,
+    "market_beta_fit_on": "train+valid",
+    "market_beta": 1.0248363755673804,
+    "lam2": 0.5344772696171654,
+    "lam3": 0.5697649377943738,
+    "lrt_p_value": 0.0,
+    "test_logloss_fusion": 2.00910900291821,
+    "test_logloss_market": 1.931090621394512,
+    "test_logloss_beats_market": false,
+    "test_top1": 0.3105759162303665,
+    "calibration_max_error_pp": 12.961931734611243
+  }
+}

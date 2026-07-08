@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from strategy.src.kelly_sizer import apply_kelly_sizing, kelly_bet_amount, kelly_fraction
+from betting.src.kelly_sizer import apply_kelly_sizing, kelly_bet_amount, kelly_fraction
 
 
 class TestKellyFraction:

@@ -43,7 +43,7 @@
     ]
   },
   "data": {
-    "src_parquet_dir": "model_training/data/01_preprocessed",
+    "src_parquet_dir": "pure_rank/data/01_preprocessed",
     "preprocessed_dir": "pure_rank/data/01_preprocessed",
     "features_dir": "pure_rank/data/02_features",
     "models_dir": "pure_rank/models",

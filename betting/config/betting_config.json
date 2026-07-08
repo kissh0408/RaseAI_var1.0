@@ -1,0 +1,17 @@
+{
+  "version": "benter_betting_v1",
+  "ev_threshold": 1.05,
+  "ev_threshold_grid": [1.02, 1.05, 1.08, 1.10, 1.15],
+  "ev_haircut": 0.95,
+  "kelly_fraction": 0.08,
+  "max_bet_ratio": 0.05,
+  "max_picks_per_race": 2,
+  "min_odds": 2.0,
+  "max_odds": 50.0,
+  "min_model_prob": 0.05,
+  "bankroll": 100000,
+  "max_daily_exposure": 0.25,
+  "monthly_mdd_limit": 0.15,
+  "consecutive_loss_stop": 10,
+  "bet_types": ["win"]
+}

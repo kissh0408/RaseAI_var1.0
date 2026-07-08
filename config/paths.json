@@ -3,14 +3,21 @@
   "pure_rank": {
     "models_dir": "pure_rank/models",
     "features_dir": "pure_rank/data/02_features",
-    "exported_scores_dir": "pure_rank/data/02_features/exported_scores",
-    "scores_all": "pure_rank/data/02_features/exported_scores/scores_v39_course_slim_all.parquet"
+    "scores_dir": "pure_rank/data/03_scores",
+    "scores_all": "pure_rank/data/03_scores/scores_v39_course_slim.parquet"
   },
-  "model_training": {
-    "preprocessed_dir": "model_training/data/01_preprocessed",
-    "features_dir": "model_training/data/02_features",
-    "models_dir": "model_training/models",
-    "train_config": "model_training/config/train_config.json"
+  "prob_fusion": {
+    "config": "prob_fusion/config/fusion_config.json",
+    "data_dir": "prob_fusion/data",
+    "params": "prob_fusion/data/fusion_params.json"
+  },
+  "betting": {
+    "config": "betting/config/betting_config.json",
+    "data_dir": "betting/data"
+  },
+  "evaluation": {
+    "reports_dir": "evaluation/reports",
+    "market_baseline": "evaluation/reports/market_baseline.json"
   },
   "main": {
     "predictions_dir": "main/predictions",
