@@ -36,9 +36,18 @@ pure_rank/data/02_features/*.bak.parquet
 pure_rank/data/01_preprocessed/*.bak_*
 pure_rank/data/01_preprocessed/*.backup_*
 
-# main/ 当日予測パイプライン: 生成物（再取得・再実行で復元可能）は除外、コードは追跡する
+# main/ 当日予測・推奨出力（再生成可能）
 main/data/
 main/predictions/
+main/results/
+main/work/
+
+# 統合前スナップショット（ローカル退避）
+backup_before_unified_integration_*/
+
+# model_training 大容量データ・モデル
+model_training/data/
+model_training/models/
 
 # Environment
 .env
@@ -67,4 +76,3 @@ logs/
 
 # Temporary work files
 pure_rank/work/
-main/work/

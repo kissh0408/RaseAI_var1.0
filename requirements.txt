@@ -1,0 +1,18 @@
+# RaceAI_var2.0.0 — 観測日 2026-06-16（.venv pip freeze、バージョン変更禁止）
+# 再現性のためアップグレードせずこの版を記録するのみ。
+
+lightgbm==4.6.0
+# 注: ローカル CUDA ビルドから file:// インストールの場合も版番号は 4.6.0
+
+numpy==2.2.5
+pandas==2.2.3
+pyarrow==23.0.1
+scikit-learn==1.6.1
+scipy==1.15.3
+joblib==1.5.0
+tqdm==4.67.1
+pywin32==311
+
+# 開発・Notebook
+pytest==9.0.3
+ipython==9.7.0

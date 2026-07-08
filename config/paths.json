@@ -1,0 +1,23 @@
+{
+  "project_root": ".",
+  "pure_rank": {
+    "models_dir": "pure_rank/models",
+    "features_dir": "pure_rank/data/02_features",
+    "exported_scores_dir": "pure_rank/data/02_features/exported_scores",
+    "scores_all": "pure_rank/data/02_features/exported_scores/scores_v39_course_slim_all.parquet"
+  },
+  "model_training": {
+    "preprocessed_dir": "model_training/data/01_preprocessed",
+    "features_dir": "model_training/data/02_features",
+    "models_dir": "model_training/models",
+    "train_config": "model_training/config/train_config.json"
+  },
+  "main": {
+    "predictions_dir": "main/predictions",
+    "results_dir": "main/results",
+    "race_data_dir": "main/data/race"
+  },
+  "common": {
+    "data_output_dir": "common/data/output"
+  }
+}

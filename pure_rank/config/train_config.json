@@ -43,14 +43,14 @@
     ]
   },
   "data": {
-    "src_parquet_dir": "C:/Users/syugo/AI/RaceAI_var2.0.0/model_training/data/01_preprocessed",
+    "src_parquet_dir": "model_training/data/01_preprocessed",
     "preprocessed_dir": "pure_rank/data/01_preprocessed",
     "features_dir": "pure_rank/data/02_features",
     "models_dir": "pure_rank/models",
     "features_version": "v39_course_slim",
-    "hc_dir": "C:/Users/syugo/AI/RaceAI_var1.0/common/data/output/slop_hc",
-    "wc_dir": "C:/Users/syugo/AI/RaceAI_var1.0/common/data/output/wood_wc",
-    "hr_dir": "C:/Users/syugo/AI/RaceAI/common/data/output/race_hr"
+    "hc_dir": "common/data/output/slop_hc",
+    "wc_dir": "common/data/output/wood_wc",
+    "hr_dir": "common/data/output/race_hr"
   },
   "features": {
     "categorical": [
@@ -132,5 +132,17 @@
     "market_blend_fit_train_valid_end": "2024-12-31",
     "market_blend_fit_n_races": 33945,
     "market_blend_log_loss": 1.934639
+  },
+  "wide_inference": {
+    "prob_method": "harville",
+    "apply_bracket": true
+  },
+  "wide_betting": {
+    "prob_source": "L1",
+    "strategy": "D",
+    "ev_threshold": 1.05,
+    "div_threshold": 0.0,
+    "valid_selection_score": null,
+    "_comment": "prob_source L1/L2 chosen on VALID via simulate_ev --divergence-compare"
   }
 }

@@ -468,6 +468,7 @@ except ImportError as _e:
     preprocess_hc = preprocess_wc = preprocess_hr = _training_unavailable  # type: ignore[misc]
     preprocess_all = _training_unavailable  # type: ignore[misc]
     build_today_features = run_today_predictions = write_predictions = _training_unavailable  # type: ignore[misc]
+    build_today_merged = _training_unavailable  # type: ignore[misc]
     load_config = _training_unavailable  # type: ignore[misc]
     _pure_rank_import_error = _e
     import warnings
@@ -492,10 +493,26 @@ else:
     build_today_features = _pr_mods["predict_today"].build_today_features
     run_today_predictions = _pr_mods["predict_today"].run_today_predictions
     write_predictions = _pr_mods["predict_today"].write_predictions
+    _build_today_merged = _pr_mods["today_adapter"].build_today_merged
     # train_config.json ローダー。today_adapter.build_today_merged() や
     # predict_today.build_today_features()/run_today_predictions() に渡す
     # cfg 引数はこの load_config() の戻り値を想定している。
     load_config = _pr_mods["common"].load_config
+
+
+def build_today_merged(
+    race_dir: Path | str | None = None,
+    preprocessed_dir: Path | str | None = None,
+):
+    """Step 2 用: 当日 RA/SE CSV → create_features 互換 DataFrame。"""
+    if _pure_rank_import_error is not None:
+        raise RuntimeError(
+            f"build_today_merged unavailable: {_pure_rank_import_error}"
+        ) from _pure_rank_import_error
+    cfg = load_config()
+    rd = Path(race_dir or PROJECT_ROOT / "main" / "data" / "race")
+    pp = Path(preprocessed_dir or PROJECT_ROOT / cfg["data"]["preprocessed_dir"])
+    return _build_today_merged(rd, pp)
 
 
 def update_jra_data(start_date_str=None, end_date_str=None, **kwargs):
@@ -581,6 +598,38 @@ def refresh_today_training_data(cur_year: int | None = None, *, timeout: int | N
     return {"hc_rows": len(hc_df), "wc_rows": len(wc_df)}
 
 
+WIDE_EV_DISPLAY_COLS = (
+    "wide_pair",
+    "p_wide",
+    "wide_odds",
+    "ev_wide",
+    "log_divergence",
+)
+
+
+def display_wide_ev_summary(export_df, *, top_n: int = 30) -> None:
+    """Step 9: レース単位のワイド EV サマリを表示（unified export 用）。"""
+    if pd is None:
+        print("[wide EV] pandas unavailable")
+        return
+    cols = [c for c in WIDE_EV_DISPLAY_COLS if c in export_df.columns]
+    if not cols or "race_id" not in export_df.columns:
+        print("[wide EV] wide columns not found — run run_unified_today() first")
+        return
+    sub = export_df.drop_duplicates(subset=["race_id"])[["race_id"] + cols].copy()
+    sort_col = "ev_wide" if "ev_wide" in sub.columns else cols[0]
+    sub = sub.sort_values(sort_col, ascending=False, na_position="last").head(top_n)
+    print(f"[wide EV] top {len(sub)} races by {sort_col}")
+    display(sub)
+
+
+def run_unified_today(**kwargs):
+    """Layer1 着順予測 + Layer2 EV 推奨の統合当日フロー。"""
+    from main.unified_pipeline import run_unified_today as _run
+
+    return _run(**kwargs)
+
+
 if pd is not None:
     pd.set_option("display.max_columns", None)
     pd.set_option("display.max_rows", 100)
@@ -627,7 +676,11 @@ __all__ = [
     "preprocess_hr",
     "create_main_features",
     "build_today_features",
+    "build_today_merged",
     "run_today_predictions",
     "write_predictions",
     "load_config",
+    "run_unified_today",
+    "display_wide_ev_summary",
+    "WIDE_EV_DISPLAY_COLS",
 ]

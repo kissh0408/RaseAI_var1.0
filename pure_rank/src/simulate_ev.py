@@ -22,12 +22,27 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from common import PROJECT_ROOT, get_feature_cols, load_config
+from common import PROJECT_ROOT, get_feature_cols, load_config, resolve_project_path
+
+_STRATEGY_SRC = PROJECT_ROOT / "strategy" / "src"
+if str(_STRATEGY_SRC) not in sys.path:
+    sys.path.insert(0, str(_STRATEGY_SRC))
+
+from wide_ev_core import (  # noqa: E402
+    collect_divergence_bets_per_race,
+    load_wide_odds_lookup,
+    tune_thresholds_on_valid,
+)
+from wide_probability import (  # noqa: E402
+    compute_calibrated_wide_probs,
+    wide_probs_from_model_prob_frame,
+)
 from evaluate import (
     ensemble_predict,
     load_models,
@@ -98,47 +113,10 @@ def _build_odds_lookup(
     odds_dir: Path,
     odds_type: str,
 ) -> dict[str, dict[PAIR_KEY, float]]:
-    """{odds_type}Odds_YYYY.csv を複数年読み込み、race_id -> {(h1,h2): odds} の辞書を返す。
-
-    Parameters
-    ----------
-    years     : テストセットの年リスト
-    odds_dir  : Odds CSV が格納されたディレクトリ
-    odds_type : "Wide" または "Quinella"
-
-    Returns
-    -------
-    dict[race_id_str, dict[(h1,h2), odds]]
-        - race_id_str: str 16 桁（int64 を str() 変換したもの。features_*.parquet の race_id と一致）
-        - (h1, h2): _norm_pair() で正規化（小さい馬番が先頭）
-        - odds: float（100円あたりの払戻倍率）
-
-    除外条件
-    --------
-    - odds_status != "ok" の行（発売前取消・発売後取消を除外）
-    - odds が NaN の行
-    - CSV ファイルが存在しない年（警告を出してスキップ）
-    """
-    lookup: dict[str, dict[PAIR_KEY, float]] = {}
-    for year in years:
-        path = odds_dir / f"{odds_type}Odds_{year}.csv"
-        if not path.exists():
-            print(f"  [warn] {odds_type}Odds_{year}.csv not found, skipping")
-            continue
-        df = pd.read_csv(path)
-        # odds_status フィルタ・NaN フィルタ（ベット可能なオッズのみ）
-        df = df[(df["odds_status"] == "ok") & df["odds"].notna()].copy()
-        # race_id: int64 -> str 16 桁（features の race_id と同じ形式）
-        df["race_id_str"] = df["race_id"].apply(lambda x: str(int(x)))
-        # ペア正規化（小さい馬番が先頭）
-        df["h_min"] = df[["horse_num_1", "horse_num_2"]].min(axis=1).astype(int)
-        df["h_max"] = df[["horse_num_1", "horse_num_2"]].max(axis=1).astype(int)
-        df["pair_key"] = list(zip(df["h_min"], df["h_max"]))
-        # レースごとに辞書を構築（同一ペアが複数スナップショット存在する場合は最後の値を採用）
-        for rid, grp in df.groupby("race_id_str"):
-            lookup[rid] = dict(zip(grp["pair_key"], grp["odds"].astype(float)))
-    print(f"  {odds_type}Odds loaded: {len(lookup):,} races across {years}")
-    return lookup
+    """Delegate to strategy.src.wide_ev_core (Step 1 shared module)."""
+    if odds_type not in ("Wide", "Quinella"):
+        raise ValueError(f"unsupported odds_type: {odds_type}")
+    return load_wide_odds_lookup(years, odds_dir, odds_type=odds_type)  # type: ignore[arg-type]
 
 
 # ─── 1番人気ベースライン併記（規律チェック用。2026-07-04〜） ─────────────────
@@ -210,7 +188,7 @@ def _merge_win_odds_lookups(
 def _load_win_odds_for_simulation(cfg: dict, years: list[int], odds_dir: Path) -> dict[str, dict[int, float]]:
     """WinOdds CSV を優先し、不足分は SE parquet から補完（ベッティングレイヤー専用）。"""
     csv_lookup_raw = _build_win_odds_lookup(years, odds_dir)
-    se_path = Path(cfg["data"]["src_parquet_dir"]) / "SE_preprocessed.parquet"
+    se_path = resolve_project_path(cfg["data"]["src_parquet_dir"]) / "SE_preprocessed.parquet"
     se_lookup: dict[str, dict[int, float]] = {}
     if se_path.exists():
         print(f"  Loading win odds fallback from SE: {se_path}")
@@ -1752,6 +1730,301 @@ def build_composite_ev_filter(
     return df_filtered
 
 
+def _roi_at_ev_threshold(
+    df_bets: pd.DataFrame,
+    ev_threshold: float,
+    ev_col: str = "ev_wide",
+) -> dict:
+    """Fixed-stake ROI for rows with ev_col >= threshold."""
+    if ev_col not in df_bets.columns:
+        return {"n_bets": 0, "roi": None, "hit_rate": None}
+    sub = df_bets[df_bets[ev_col] >= ev_threshold]
+    n = len(sub)
+    if n == 0:
+        return {"n_bets": 0, "roi": None, "hit_rate": None}
+    payout = float(sub["payout_wide"].sum())
+    stake = n * STAKE
+    return {
+        "n_bets": n,
+        "roi": round(payout / stake, 6),
+        "hit_rate": round(float(sub["hit_wide"].mean()), 6),
+    }
+
+
+def _bracket_calibration_gate(
+    df_valid: pd.DataFrame,
+    preds_valid: np.ndarray,
+    hr_df: pd.DataFrame,
+    T_opt: float,
+    wide_odds_lookup: dict[str, dict[PAIR_KEY, float]],
+    bracket_models: dict | None,
+    ev_threshold: float = 1.05,
+) -> dict:
+    """VALID bracket isotonic gate: MAE target <0.06, ROI +2pp at EV>=ev_threshold."""
+    if not wide_odds_lookup:
+        return {"status": "skipped", "reason": "no_wide_odds_csv"}
+    df_with = _collect_bets_per_race(
+        df_valid,
+        preds_valid,
+        hr_df,
+        T_opt,
+        wide_odds_lookup=wide_odds_lookup,
+        quinella_odds_lookup=None,
+        bracket_models=bracket_models,
+    )
+    df_without = _collect_bets_per_race(
+        df_valid,
+        preds_valid,
+        hr_df,
+        T_opt,
+        wide_odds_lookup=wide_odds_lookup,
+        quinella_odds_lookup=None,
+        bracket_models=None,
+    )
+    cal_with = check_calibration(df_with, p_col="p_wide")
+    cal_without = check_calibration(df_without, p_col="p_wide_raw")
+    roi_with = _roi_at_ev_threshold(df_with, ev_threshold, ev_col="ev_wide")
+    roi_without = _roi_at_ev_threshold(df_without, ev_threshold, ev_col="ev_wide_raw")
+    roi_with_val = roi_with.get("roi")
+    roi_raw_val = roi_without.get("roi")
+    lift_pp = None
+    if roi_with_val is not None and roi_raw_val is not None:
+        lift_pp = round((roi_with_val - roi_raw_val) * 100, 4)
+    mae_with = cal_with.get("mean_abs_error")
+    return {
+        "status": "ok",
+        "ev_threshold": ev_threshold,
+        "mae_with_bracket": mae_with,
+        "mae_without_bracket": cal_without.get("mean_abs_error"),
+        "mae_target": 0.06,
+        "mae_pass": bool(mae_with is not None and mae_with < 0.06),
+        "roi_with_bracket": roi_with,
+        "roi_without_bracket": roi_without,
+        "roi_lift_pp": lift_pp,
+        "roi_pass": bool(lift_pp is not None and lift_pp >= 2.0),
+    }
+
+
+def _build_l1_p_wide_map(
+    horse_nums: list[int],
+    scores: np.ndarray,
+    race_id: str,
+    T_opt: float,
+    wide_odds_lookup: dict[str, dict[PAIR_KEY, float]],
+    bracket_models: dict | None,
+) -> dict[PAIR_KEY, float]:
+    return compute_calibrated_wide_probs(
+        scores,
+        horse_nums,
+        T_opt=T_opt,
+        bracket_models=bracket_models,
+        wide_odds_lookup=wide_odds_lookup,
+        race_id=race_id,
+        apply_bracket=bool(bracket_models),
+    )
+
+
+def _collect_divergence_strategy_df(
+    df_split: pd.DataFrame,
+    predictions: np.ndarray,
+    hr_df: pd.DataFrame,
+    T_opt: float,
+    wide_odds_lookup: dict[str, dict[PAIR_KEY, float]],
+    bracket_models: dict | None,
+    *,
+    strategy: str,
+    ev_threshold: float,
+    div_threshold: float,
+    prob_source: str = "L1",
+) -> pd.DataFrame:
+    """Per-race bets for Strategy A (argmax p) or D (argmax divergence + dual threshold)."""
+    if not wide_odds_lookup:
+        return pd.DataFrame()
+
+    wide_lookup = _build_hr_lookup(hr_df, "wide")
+    df = df_split.copy()
+    df["pred_score"] = predictions
+    rows: list[dict] = []
+
+    for race_id, grp in df.groupby("race_id"):
+        if len(grp) < 2:
+            continue
+        rid = str(race_id)
+        grp = grp.sort_values("pred_score", ascending=False).reset_index(drop=True)
+        horse_nums = [int(h) for h in grp["horse_num"].astype(int).values]
+        scores = grp["pred_score"].values.astype(float)
+
+        if prob_source == "L2" and "model_prob" in grp.columns:
+            mp = pd.to_numeric(grp["model_prob"], errors="coerce").fillna(0.0).values
+            p_map = wide_probs_from_model_prob_frame(horse_nums, mp)
+        else:
+            p_map = _build_l1_p_wide_map(
+                horse_nums, scores, rid, T_opt, wide_odds_lookup, bracket_models
+            )
+        if not p_map:
+            continue
+
+        pick = collect_divergence_bets_per_race(
+            rid,
+            p_map,
+            wide_odds_lookup,
+            strategy=strategy,  # type: ignore[arg-type]
+            ev_threshold=ev_threshold,
+            div_threshold=div_threshold,
+        )
+        if pick is None:
+            continue
+        pair = pick["pair"]
+        payout = int(wide_lookup.get(rid, {}).get(pair, 0))
+        rows.append(
+            {
+                "race_id": rid,
+                "strategy": strategy,
+                "prob_source": prob_source,
+                "pair": pair,
+                "p_wide": pick["p_wide"],
+                "wide_odds": pick["wide_odds"],
+                "ev_wide": pick["ev_wide"],
+                "log_divergence": pick["log_divergence"],
+                "bet": bool(pick["bet"]),
+                "payout_wide": payout,
+                "hit_wide": int(payout > 0),
+                "payout_mult": payout / STAKE if payout > 0 else 0.0,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _strategy_stats(df: pd.DataFrame, *, bet_only: bool = True) -> dict:
+    sub = df[df["bet"]] if bet_only and "bet" in df.columns else df
+    n = len(sub)
+    if n == 0:
+        return {"n_bets": 0, "roi": None, "hit_rate": None, "total_profit": None}
+    payout = float(sub["payout_wide"].sum())
+    inv = n * STAKE
+    return {
+        "n_bets": n,
+        "roi": round(payout / inv, 6),
+        "hit_rate": round(float(sub["hit_wide"].mean()), 6),
+        "total_profit": round(payout - inv, 2),
+    }
+
+
+def _run_divergence_comparison(
+    df_valid: pd.DataFrame,
+    df_test: pd.DataFrame,
+    preds_valid: np.ndarray,
+    preds_test: np.ndarray,
+    hr_df: pd.DataFrame,
+    T_opt: float,
+    wide_odds_lookup_valid: dict[str, dict[PAIR_KEY, float]],
+    wide_odds_lookup_test: dict[str, dict[PAIR_KEY, float]],
+    bracket_models: dict | None,
+) -> dict:
+    """L1 Strategy A vs D on VALID/TEST; VALID threshold tuning; optional L2 if model_prob present."""
+    if not wide_odds_lookup_valid and not wide_odds_lookup_test:
+        return {"status": "skipped", "reason": "no_wide_odds_csv"}
+
+    ev_grid = [1.0, 1.05, 1.1, 1.2]
+    div_grid = [0.0, 0.1, 0.2]
+
+    df_l1_valid_d = _collect_divergence_strategy_df(
+        df_valid,
+        preds_valid,
+        hr_df,
+        T_opt,
+        wide_odds_lookup_valid,
+        bracket_models,
+        strategy="D",
+        ev_threshold=1.05,
+        div_threshold=0.0,
+        prob_source="L1",
+    )
+    tune_rows = [
+        {
+            "ev_wide": r["ev_wide"],
+            "log_divergence": r["log_divergence"],
+            "payout_mult": r["payout_mult"],
+        }
+        for _, r in df_l1_valid_d.iterrows()
+    ] if not df_l1_valid_d.empty else []
+    best_thresholds = tune_thresholds_on_valid(
+        tune_rows,
+        ev_thresholds=ev_grid,
+        div_thresholds=div_grid,
+        min_bets=100,
+    )
+    ev_t = float(best_thresholds.get("ev_threshold", 1.05))
+    div_t = float(best_thresholds.get("div_threshold", 0.0))
+
+    out: dict = {
+        "status": "ok",
+        "valid_threshold_selection": best_thresholds,
+        "selected_ev_threshold": ev_t,
+        "selected_div_threshold": div_t,
+        "L1": {},
+        "L2": {"status": "skipped", "reason": "model_prob not in features parquet"},
+    }
+
+    for split_name, df_s, preds_s, odds_lk in (
+        ("valid", df_valid, preds_valid, wide_odds_lookup_valid),
+        ("test", df_test, preds_test, wide_odds_lookup_test),
+    ):
+        df_a = _collect_divergence_strategy_df(
+            df_s, preds_s, hr_df, T_opt, odds_lk, bracket_models,
+            strategy="A", ev_threshold=ev_t, div_threshold=div_t, prob_source="L1",
+        )
+        df_d = _collect_divergence_strategy_df(
+            df_s, preds_s, hr_df, T_opt, odds_lk, bracket_models,
+            strategy="D", ev_threshold=ev_t, div_threshold=div_t, prob_source="L1",
+        )
+        out["L1"][split_name] = {
+            "strategy_A": _strategy_stats(df_a),
+            "strategy_D": _strategy_stats(df_d),
+            "D_minus_A_roi_pp": (
+                round((df_d[df_d["bet"]]["payout_wide"].sum() / max(len(df_d[df_d["bet"]]), 1) / STAKE
+                       - df_a[df_a["bet"]]["payout_wide"].sum() / max(len(df_a[df_a["bet"]]), 1) / STAKE) * 100, 4)
+                if len(df_d[df_d["bet"]]) > 0 and len(df_a[df_a["bet"]]) > 0
+                else None
+            ),
+        }
+
+    if "model_prob" in df_valid.columns:
+        out["L2"]["status"] = "ok"
+        out["L2"]["reason"] = None
+        out["L2"]["valid"] = {}
+        out["L2"]["test"] = {}
+        for split_name, df_s, preds_s, odds_lk in (
+            ("valid", df_valid, preds_valid, wide_odds_lookup_valid),
+            ("test", df_test, preds_test, wide_odds_lookup_test),
+        ):
+            df_a = _collect_divergence_strategy_df(
+                df_s, preds_s, hr_df, T_opt, odds_lk, None,
+                strategy="A", ev_threshold=ev_t, div_threshold=div_t, prob_source="L2",
+            )
+            df_d = _collect_divergence_strategy_df(
+                df_s, preds_s, hr_df, T_opt, odds_lk, None,
+                strategy="D", ev_threshold=ev_t, div_threshold=div_t, prob_source="L2",
+            )
+            out["L2"][split_name] = {
+                "strategy_A": _strategy_stats(df_a),
+                "strategy_D": _strategy_stats(df_d),
+            }
+
+    # Recommend prob_source by VALID D ROI × sqrt(n)
+    l1_valid = out["L1"].get("valid", {}).get("strategy_D", {})
+    l2_valid = out.get("L2", {}).get("valid", {}).get("strategy_D", {})
+    l1_score = (l1_valid.get("roi") or 0) * (l1_valid.get("n_bets") or 0) ** 0.5
+    l2_score = (l2_valid.get("roi") or 0) * (l2_valid.get("n_bets") or 0) ** 0.5 if l2_valid else -1
+    recommended = "L1" if l1_score >= l2_score else "L2"
+    out["recommended_prob_source"] = recommended
+    out["step3_pass"] = bool(
+        out["L1"].get("valid", {}).get("D_minus_A_roi_pp") is not None
+        and out["L1"]["valid"]["D_minus_A_roi_pp"] >= 3.0
+    )
+    return out
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Wide/Quinella EV simulation (eval only)")
     parser.add_argument("--output", type=str, default=None, help="Output JSON path")
@@ -1804,6 +2077,11 @@ def main() -> None:
             "事前に `python pure_rank/src/predict.py --fit-market-blend` が必要。"
             "単勝オッズは SE_preprocessed.parquet から読み込み（特徴量不使用）。"
         ),
+    )
+    parser.add_argument(
+        "--divergence-compare",
+        action="store_true",
+        help="Strategy A vs D (market divergence) comparison on VALID+TEST splits.",
     )
     args = parser.parse_args()
 
@@ -1881,12 +2159,74 @@ def main() -> None:
         print(f"  1番人気 単勝ROI  : N/A（{favorite_baseline['reason']}）")
 
     print(f"\nCollecting per-race bets (T_opt={T_opt})...")
+    bracket_models: dict | None = None
+    wide_inf = cfg.get("wide_inference", {})
+    apply_bracket = bool(wide_inf.get("apply_bracket", True))
+    if apply_bracket and cfg.get("calibration", {}).get("fitted", False):
+        bracket_models, _br_meta = load_bracket_calibration(models_dir)
+        if bracket_models:
+            print(f"  Bracket isotonic loaded: {sorted(bracket_models.keys())}")
     df_bets = _collect_bets_per_race(
         df_test, preds, hr_df, T_opt,
         wide_odds_lookup=wide_odds_lookup,
         quinella_odds_lookup=quinella_odds_lookup,
+        bracket_models=bracket_models,
     )
     print(f"  Collected {len(df_bets):,} race-bets")
+
+    # --- VALID bracket gate + optional divergence compare ----------------------
+    df_valid = df[
+        (df["race_date"] > train_end_ts) & (df["race_date"] <= valid_end_ts)
+    ].copy()
+    valid_years = sorted(df_valid["race_date"].dt.year.unique().tolist()) if not df_valid.empty else []
+    wide_odds_lookup_valid = (
+        _build_odds_lookup(valid_years, odds_dir, "Wide") if valid_years else {}
+    )
+    preds_valid = ensemble_predict(models, df_valid[feature_cols]) if not df_valid.empty else np.array([])
+    bracket_valid_gate = _bracket_calibration_gate(
+        df_valid,
+        preds_valid,
+        hr_df,
+        T_opt,
+        wide_odds_lookup_valid,
+        bracket_models,
+        ev_threshold=1.05,
+    )
+    if bracket_valid_gate.get("status") == "ok":
+        print(
+            f"\n--- Bracket VALID gate (EV>=1.05) ---\n"
+            f"  MAE with bracket   : {bracket_valid_gate.get('mae_with_bracket')}\n"
+            f"  MAE without bracket: {bracket_valid_gate.get('mae_without_bracket')}\n"
+            f"  ROI lift (pp)      : {bracket_valid_gate.get('roi_lift_pp')}"
+        )
+    else:
+        print(f"\n--- Bracket VALID gate skipped: {bracket_valid_gate.get('reason')} ---")
+
+    divergence_section: dict | None = None
+    if args.divergence_compare:
+        print(f"\n{'='*60}\n=== Divergence compare (L1/L2, Strategy A vs D) ===\n{'='*60}")
+        divergence_section = _run_divergence_comparison(
+            df_valid,
+            df_test,
+            preds_valid,
+            preds,
+            hr_df,
+            T_opt,
+            wide_odds_lookup_valid,
+            wide_odds_lookup,
+            bracket_models,
+        )
+        if divergence_section.get("status") == "ok":
+            sel = divergence_section.get("valid_threshold_selection", {})
+            print(
+                f"  Selected thresholds: ev={sel.get('ev_threshold')}, "
+                f"div={sel.get('div_threshold')}, n={sel.get('n_bets')}, roi={sel.get('roi')}"
+            )
+            rec = divergence_section.get("recommended_prob_source")
+            print(f"  Recommended prob_source: {rec}")
+            print(f"  Step3 pass (D-A >= 3pp VALID): {divergence_section.get('step3_pass')}")
+        else:
+            print(f"  Skipped: {divergence_section.get('reason')}")
 
     # --- EV=NaN 率の集計・報告 -----------------------------------------------
     n_ev_na = int(df_bets["ev_wide"].isna().sum())
@@ -2194,6 +2534,7 @@ def main() -> None:
             df_valid, preds_valid, hr_df, T_opt,
             wide_odds_lookup=wide_odds_lookup_valid,
             quinella_odds_lookup=quinella_odds_lookup_valid,
+            bracket_models=bracket_models,
         )
         print(f"  VALID bets collected: {len(df_bets_valid):,} races")
 
@@ -2544,8 +2885,8 @@ def main() -> None:
                 out[k] = float(v) if not np.isnan(v) else None
             elif isinstance(v, (np.integer, int)):
                 out[k] = int(v)
-            elif isinstance(v, bool):
-                out[k] = v
+            elif isinstance(v, (bool, np.bool_)):
+                out[k] = bool(v)
             else:
                 out[k] = v
         return out
@@ -2600,6 +2941,8 @@ def main() -> None:
                 else None
             ),
         },
+        "bracket_valid_gate": _clean_risk(bracket_valid_gate),
+        "divergence_compare": _clean_risk(divergence_section) if divergence_section else None,
     }
 
     out_path = Path(args.output) if args.output else (

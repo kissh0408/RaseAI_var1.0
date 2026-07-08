@@ -453,14 +453,16 @@ def main() -> None:
     dst_dir = PROJECT_ROOT / cfg["data"]["preprocessed_dir"]
 
     if args.hr_only:
-        hr_dir = Path(cfg["data"].get("hr_dir", "common/data/output/race_hr"))
-        if not hr_dir.is_absolute():
-            hr_dir = PROJECT_ROOT / hr_dir
+        from common import resolve_project_path
+
+        hr_dir = resolve_project_path(cfg["data"].get("hr_dir", "common/data/output/race_hr"))
         preprocess_hr(hr_dir, dst_dir / "HR_preprocessed.parquet")
         print("\n[preprocess] HR Done.")
         return
 
-    src_dir = Path(cfg["data"]["src_parquet_dir"])
+    from common import resolve_project_path
+
+    src_dir = resolve_project_path(cfg["data"]["src_parquet_dir"])
     dst_dir = PROJECT_ROOT / cfg["data"]["preprocessed_dir"]
 
     # var2.0.0 の horse_data.parquet を読む（SE+RA+血統 の結合済みテーブル）
@@ -475,8 +477,8 @@ def main() -> None:
     preprocess_sk(hd, dst_dir / "SK_preprocessed.parquet")
 
     # HC/WC 調教データの前処理
-    hc_dir = Path(cfg["data"]["hc_dir"])
-    wc_dir = Path(cfg["data"]["wc_dir"])
+    hc_dir = resolve_project_path(cfg["data"]["hc_dir"])
+    wc_dir = resolve_project_path(cfg["data"]["wc_dir"])
     preprocess_hc(hc_dir, dst_dir / "HC_preprocessed.parquet")
     preprocess_wc(wc_dir, dst_dir / "WC_preprocessed.parquet")
 

@@ -1,0 +1,399 @@
+{
+  "training": {
+    "train_end_date": "2025-12-31",
+    "seed": 42,
+    "n_trials": 50,
+    "_comment_n_trials": "rank 学習の Optuna 既定試行数（train_model→N_TRIALS）。本番 rank は production_training.n_trials を優先。binary 残差は backtest_n_trials=0 のみ参照。2026-06-17: 150→50（TPE+Pruner で十分、3シード全探索は非効率のため HP 再利用とセット）。",
+    "backtest_n_trials": 0,
+    "_comment_backtest_n_trials": "binary 残差バックテスト学習(train_fold/run_ensemble_training)専用の Optuna 試行数。0 固定＝Optuna を一切走らせない。理由: バリデーション期間に過学習し Fold3 が REJECT になった実績があるため、CLAUDE.md『binary は n_trials=0 固定』が正。グローバル n_trials(150) は rank 専用であり、binary はこの値を読む。",
+    "backtest_conservative_params": {
+      "num_leaves": 31,
+      "min_child_samples": 80,
+      "reg_alpha": 1.0,
+      "reg_lambda": 2.0
+    },
+    "_comment_backtest_conservative_params": "binary 残差学習専用。2026-06-17 roadmap: min_child_samples 50→80 で F2 Sharpe 0.112 PASS_FULL 採用。",
+    "backtest_monotone_constraints": {
+      "enabled": false,
+      "plus_patterns": ["var1_pure_score_z"]
+    },
+    "_comment_backtest_monotone_constraints": "P-43 Option C: var1_pure_score_z に +1 単調増加制約。Fold 3 検証後に enabled を false に戻す。",
+    "feature_file": "features_past_v25_odds.parquet",
+    "backtest_feature_file": "features_v6_going_v1_top3_var1.parquet",
+    "optuna_holdout_years": 2,
+    "pedigree_train_year_cut": 2025,
+    "default_feature_set": "all_non_leak",
+    "use_gpu": true,
+    "device": "cuda",
+    "_comment_use_gpu": "2026-06-18 conda-forge cuda129_py312 ビルドで CUDA 有効化成功。RTX5070Ti / CUDA 12.8 / Driver 13.0。conda install -c conda-forge 'lightgbm=4.6.0=cuda129_py312*' で換装。",
+    "gpu_platform_id": 0,
+    "gpu_device_id": 0,
+    "gpu_use_dp": false,
+    "max_bin": 255,
+    "gpu_max_bin": 63,
+    "rank1_label_mode": "soft",
+    "rank1_soft_targets": {
+      "1": 1.0,
+      "2": 0.5,
+      "3": 0.2
+    },
+    "rank1_time_decay_alpha": 0.15,
+    "rank1_objective": "cross_entropy",
+    "rank1_weight_min": 0.5,
+    "rank1_weight_max": 3.0,
+    "rank1_time_diff_missing_fill": 5.0,
+    "rank1_binary_loser_weight": 0.8,
+    "rank1_weight_mode": "time_decay_only",
+    "rank1_log_weight_quantiles": true,
+    "rank1_isotonic_enabled": true,
+    "rank1_isotonic_fit_years": null,
+    "rank2_isotonic_enabled": true,
+    "rank2_isotonic_fit_years": null,
+    "rank3_isotonic_enabled": true,
+    "rank3_isotonic_fit_years": null,
+    "rank1_log_optuna_top3_proxy": false,
+    "rank1_log_fold_top3_proxy": true,
+    "show_progress": true,
+    "optuna_max_rounds": 150,
+    "final_max_rounds": 1000,
+    "kelly_fraction": 0.08,
+    "max_bet_ratio": 0.05,
+    "ev_threshold": 1.05,
+    "min_odds": 2.0,
+    "max_odds": 50.0,
+    "min_model_prob": 0.05,
+    "max_picks_per_race": 2,
+    "_comment_max_picks_per_race": "EV閾値通過後、レース内EV上位N頭のみ推奨（確率キャリブレーション変化時の過剰ベット抑制）",
+    "bet_tuning": {
+      "enabled": false,
+      "objective": "sharpe",
+      "ev_threshold_grid": [0.95, 1.0, 1.03, 1.05, 1.08, 1.1, 1.15],
+      "max_picks_grid": [1, 2, 3, 4],
+      "min_valid_bets": 100,
+      "min_valid_bets_by_fold": {
+        "1": 50,
+        "2": 80,
+        "3": 100
+      },
+      "min_valid_bets_absolute": 30,
+      "sharpe_tie_delta": 0.01,
+      "_comment": "Phase 1b: VALID Sharpe 最大 + Fold 別 min_n。TEST は使わない（Rule 3）"
+    },
+    "var1_market_blend": {
+      "enabled": false,
+      "beta": 0.3,
+      "_comment": "RaceAI_var1.0 predict.py --fit-market-blend の beta。EV 計算専用 ev_prob に使用"
+    },
+    "var1_scores_path": "pure_rank/data/02_features/exported_scores/scores_v39_course_slim_all.parquet",
+    "var1_init_score": {
+      "enabled": true,
+      "beta": 0.15,
+      "z_col": "var1_pure_score_z",
+      "market_col": "market_log_odds",
+      "beta_sweep_values": [0.0, 0.15, 0.25, 0.35, 0.50],
+      "tie_break_logloss_delta": 0.001,
+      "inference_fallback_beta_zero_on_missing_z": true
+    },
+    "_comment_var1_init_score": "Phase 1a-A: var1 を init_score に統合（方針 A）。特徴量からは恒久除外。β は Fold3 VALID で選択。",
+    "dynamic_edge_enabled": false,
+    "_comment_dynamic_edge": "binary バックテストは ev_threshold(1.05) でフィルタ。dynamic_edge は本番 strategy_config.json 専用。true にすると model_edge 平均0.02台の binary 系でベットが激減する。",
+    "base_margin_col": "market_log_odds",
+    "objective": "binary",
+    "metric": "binary_logloss",
+    "learning_rate": 0.05,
+    "num_leaves": 63,
+    "min_child_samples": 30,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "reg_alpha": 0.1,
+    "reg_lambda": 1.0,
+    "n_estimators": 1000,
+    "early_stopping_rounds": 50,
+    "verbose": -1,
+    "force_row_wise": true,
+    "walkforward_folds": [
+      {
+        "fold": 1,
+        "train_end": "2021-12-31",
+        "valid_start": "2022-01-01",
+        "valid_end": "2022-12-31",
+        "test_start": "2023-01-01",
+        "test_end": "2023-12-31"
+      },
+      {
+        "fold": 2,
+        "train_end": "2022-12-31",
+        "valid_start": "2023-01-01",
+        "valid_end": "2023-12-31",
+        "test_start": "2024-01-01",
+        "test_end": "2024-12-31"
+      },
+      {
+        "fold": 3,
+        "train_end": "2023-12-31",
+        "valid_start": "2024-01-01",
+        "valid_end": "2024-12-31",
+        "test_start": "2025-01-01",
+        "test_end": "2026-06-17"
+      }
+    ],
+    "exclude_grade_codes": [
+      8,
+      9
+    ],
+    "exclude_abnormal_codes": [
+      1,
+      3,
+      4
+    ],
+    "min_horse_count": 5,
+    "_comment_min_horse_count": "学習・BT用。本番 min_field_size=9 は strategy_pipeline で追加フィルタ（audit D-4: BT=9 は F2 Sharpe 崩壊のため学習は5維持）。",
+    "exclude_surface_codes": [
+      3
+    ],
+    "calibration": {
+      "method": "isotonic",
+      "holdout_days": 90,
+      "temperature": 1.0,
+      "_comment_temperature": "binary BT 既定=1.0（無スケール）。0.75 は旧来未適用の名目的値。Phase4 実験時のみ 0.65-0.85 を上書き。",
+      "isotonic": false,
+      "_comment_isotonic": "Step2 rejected: ROI/Sharpe/hit all worse vs Phase4 champion. Keep false.",
+      "temperature_tune": false
+    }
+  },
+  "features": {
+    "basic": [
+      "horse_age",
+      "carry_weight",
+      "gate_number",
+      "horse_count",
+      "days_since_last_race",
+      "weight_diff",
+      "weight_diff_trend",
+      "class_change",
+      "draw_bias_score",
+      "surface_code",
+      "distance",
+      "track_condition_code",
+      "horse_sex_code",
+      "market_prob"
+    ],
+    "past": [
+      "last3_agari3f_mean",
+      "last5_rank_mean",
+      "last5_time_diff_mean",
+      "career_win_rate",
+      "distance_win_rate",
+      "course_win_rate",
+      "surface_win_rate",
+      "condition_win_rate",
+      "jockey_30d_win_rate",
+      "trainer_30d_win_rate",
+      "jockey_course_win_rate",
+      "sire_surface_win_rate",
+      "bms_win_rate",
+      "last5_rank_std",
+      "top3_rate_career",
+      "top3_rate_class"
+    ],
+    "v2_extended": [
+      "ema_rank",
+      "ema_time_diff",
+      "rpr_score",
+      "corner_pos_mean",
+      "corner_pos_last",
+      "running_style_mode",
+      "front_rate",
+      "race_front_count",
+      "race_front_ratio",
+      "race_style_entropy",
+      "pci_past_mean",
+      "agari_z_score",
+      "race_pci",
+      "gate_surface_cross",
+      "summer_mare_sin",
+      "summer_mare_cos",
+      "past_speed_index_mean",
+      "jra_tm_score",
+      "jra_tm_rank",
+      "jra_dm_rank",
+      "jra_dm_gap_to_best",
+      "jra_dm_uncertainty",
+      "jra_tm_orthogonalized",
+      "var1_pure_score_z",
+      "weight_relative_z",
+      "course_last_straight_m",
+      "course_n_corners",
+      "surface_cond_code"
+    ],
+    "latent": [
+      "horse_turf_heavy_win_rate",
+      "horse_dirt_heavy_win_rate",
+      "condition_win_rate_bayes",
+      "going_active_heavy_rate",
+      "horse_going_preference"
+    ]
+  },
+  "db": {
+    "path": "common/data/JVData.db"
+  },
+  "filters": {
+    "default_exclude_abnormal_codes": [
+      1,
+      3,
+      4
+    ]
+  },
+  "shap": {
+    "enabled": true,
+    "sample_size": 2000,
+    "top_ev_n": 30
+  },
+  "ensemble": {
+    "enabled": true,
+    "method": "mean",
+    "seeds": [
+      42,
+      100,
+      200
+    ],
+    "output_dir": "ensemble_v6_expA",
+    "reuse_optuna_from_first_seed": true,
+    "_comment_reuse_optuna": "true: 2シード目以降は seed=42 の Optuna 最良 HP を固定再利用（bagging 乱数のみ差分）。fast_mode 未使用時も有効。"
+  },
+  "production_training": {
+    "_comment": "本番 rank アンサンブル学習の確定仕様。run_production_train.py が読む。実験は going_improvement.experiments / ensemble.output_dir を使う。",
+    "feature_file": "features_past_v25_odds.parquet",
+    "output_dir": "ensemble_v5",
+    "feature_set": "all_non_leak",
+    "n_trials": 50,
+    "experiment_n_trials": 25,
+    "_comment_n_trials": "本番50 / 特徴量A/B実験25。150は根拠なし過剰のため廃止。",
+    "optuna_max_rounds": 150,
+    "final_max_rounds": 1000,
+    "optuna_holdout_years": 2,
+    "walkforward_start_year": 2018,
+    "walkforward_end_year": 2025,
+    "_comment_walkforward": "2018-2025=8fold → Optuna6fold+HPホールドアウト2fold。v5の2fold(2025-26)のみだと holdout 無効化バグあり。end=2025 は train_end_date と整合。",
+    "reuse_optuna_from_first_seed": true,
+    "seeds": [
+      42,
+      100,
+      200
+    ],
+    "require_pedigree": true,
+    "min_pedigree_coverage": 0.1,
+    "enable_feature_selection": true,
+    "max_feature_drop_ratio": 0.2,
+    "min_rank_group_size": 2
+  },
+  "going_improvement": {
+    "interaction_constraints_enabled": true,
+    "monotone_constraints_enabled": false,
+    "monotone_constraints_plus_patterns": [
+      "horse_turf_heavy", "horse_dirt_heavy",
+      "going_heavy_aptitude", "going_dirt_heavy_aptitude",
+      "heavy_track_aptitude",
+      "jockey_heavy", "jockey_turf_soft", "jockey_dirt_",
+      "trainer_turf_heavy", "trainer_turf_soft", "trainer_dirt_",
+      "sire_heavy", "sire_soft", "sire_turf_", "sire_dirt_",
+      "dam_sire_turf_",
+      "going_soft_exp_count", "horse_soft_turf_",
+      "going_match_score_", "going_active_heavy_rate"
+    ],
+    "monotone_constraints_zero_patterns": [
+      "delta_sire_", "delta_horse_", "delta_jockey_",
+      "going_delta_active_score",
+      "turf_condition", "dirt_condition",
+      "current_going_",
+      "speed_index_3run_avg", "speed_index_trend",
+      "tm_score_surface_adj", "daily_track_variant",
+      "pace_dist_style_win_rate",
+      "going_worsening_flag", "horse_going_preference"
+    ],
+    "rank1_baba_weight_mode": "none",
+    "rank1_baba_weights": {
+      "1": 1.0,
+      "2": 1.5,
+      "3": 2.5,
+      "4": 3.0
+    },
+    "experiments": {
+      "A": {
+        "description": "interaction_constraints only",
+        "interaction_constraints_enabled": true,
+        "rank1_baba_weight_mode": "none",
+        "ensemble_output_dir": "ensemble_v6_expA",
+        "feature_file": "features_past_v25_odds.parquet"
+      },
+      "B": {
+        "description": "Exp-A + baba sample_weight multiplier",
+        "interaction_constraints_enabled": true,
+        "rank1_baba_weight_mode": "multiplier",
+        "ensemble_output_dir": "ensemble_v6_expB",
+        "feature_file": "features_past_v25_odds.parquet"
+      },
+      "C": {
+        "description": "Exp-B + v26 going delta features",
+        "interaction_constraints_enabled": true,
+        "rank1_baba_weight_mode": "multiplier",
+        "ensemble_output_dir": "ensemble_v6_expC",
+        "feature_file": "features_past_v26_going_delta.parquet"
+      },
+      "D": {
+        "description": "Exp-C + v27 track variant (final ensemble_v6)",
+        "interaction_constraints_enabled": true,
+        "rank1_baba_weight_mode": "multiplier",
+        "ensemble_output_dir": "ensemble_v6",
+        "feature_file": "features_past_v27_track_variant.parquet"
+      },
+      "E": {
+        "description": "Exp-C + monotone_constraints on going aptitude features",
+        "interaction_constraints_enabled": true,
+        "monotone_constraints_enabled": true,
+        "rank1_baba_weight_mode": "multiplier",
+        "ensemble_output_dir": "ensemble_v6_expE",
+        "feature_file": "features_past_v26_going_delta.parquet"
+      }
+    },
+    "fast_mode": {
+      "enabled": false,
+      "n_trials": 20,
+      "optuna_max_rounds": 80,
+      "final_max_rounds": 400,
+      "enable_feature_selection": false,
+      "reuse_optuna_from_first_seed": true
+    },
+    "active_experiment": "A"
+  },
+  "feature_exclusions": {
+    "experiment_active": [],
+    "_comment_prune_low_gain": "prune_low_gain リストは experiment_tm_prune_ab.py が治療群のみ一時適用。候補: class_change,surface_code,course_n_corners,track_condition_code,race_front_count,surface_cond_code,race_pci",
+    "_comment_no_market_v1": "E1 no_market 実験: ablation_latent が experiment_active に market_prob を一時設定。TM/DM 列は維持",
+    "v17_pedigree_removed": [
+      "sibling_avg_win_dist_ls",
+      "interact_switch_x_sibling_bias_ls",
+      "interact_debut_x_sibling_bias_ls"
+    ],
+    "v24_pedigree_exclude_low_signal": [
+      "sibling_surface_bias_ls"
+    ],
+    "_comment_v22_pedigree_fix": "v22_pedigree_enabledキーは設計バグ: data-generator調査(2026-06-05)でinteract_shallow_x_winup_ls(NaN=0%,corr+0.027)/sibling_winup_rate_ls(NaN=22.7%,corr+0.059)/sibling_heavy_score_ls(NaN=28.5%,corr+0.043)がモデルに有用と判定。ensemble_v4は既に学習済みのためv5から適用。sibling_surface_bias_ls(NaN=40.2%)のみ慎重除外を継続",
+    "v23_pedigree_high_nan_excluded": [
+      "dam_sire_dirt_win_rate",
+      "sire_dirt_win_rate",
+      "sire_long_turf_win_rate"
+    ]
+  },
+  "_comment_feature_exclusions": "feature_exclusionsの各値はlist[str]でなければならない（train.pyがforループでc not in excl_listを適用するため）。v23_pedigree_high_nan_excluded: dam_sire_dirt_win_rate(NaN率97%)・sire_dirt_win_rate(NaN率97%)・sire_long_turf_win_rate(NaN率93.9%)はいずれも高NaN率のため除外。pedigree_lift_comparison.jsonでROI-5.1%の悪化原因の一つ。2026-06-05",
+  "condition_ev_overrides": [],
+  "_comment_condition_ev_overrides": "strategy_config.json と同一キー。backtest/binary_recommendation 両方がここを参照（project_audit D-1 修正）。",
+  "wide_betting": {
+    "prob_source": "L1",
+    "strategy": "D",
+    "ev_threshold": 1.05,
+    "div_threshold": 0.0,
+    "valid_selection_score": null,
+    "_comment": "prob_source L1/L2 chosen on VALID via simulate_ev --divergence-compare. TEST report only."
+  }
+}

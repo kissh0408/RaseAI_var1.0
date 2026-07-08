@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 # 共通関数は common.py / evaluate.py から再利用（コード重複禁止）
-from common import CONFIG_PATH, PROJECT_ROOT, get_feature_cols, load_config
+from common import CONFIG_PATH, PROJECT_ROOT, get_feature_cols, load_config, resolve_project_path
 from evaluate import (
     ensemble_predict,
     load_models,
@@ -513,7 +513,7 @@ def run_fit_market_blend(cfg: dict | None = None) -> float:
         f"{len(df_fit):,} rows, {df_fit['race_id'].nunique():,} races"
     )
 
-    se_path = Path(cfg["data"]["src_parquet_dir"]) / "SE_preprocessed.parquet"
+    se_path = resolve_project_path(cfg["data"]["src_parquet_dir"]) / "SE_preprocessed.parquet"
     if not se_path.exists():
         raise FileNotFoundError(
             f"SE_preprocessed.parquet が見つかりません: {se_path}\n"

@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 
 # パス解決・設定読み込み・禁止列定義は common.py に一元化
-from common import FORBIDDEN_MARKET_COLS, PROJECT_ROOT, get_feature_cols, load_config
+from common import FORBIDDEN_MARKET_COLS, PROJECT_ROOT, get_feature_cols, load_config, resolve_project_path
 
 
 # ─── コース形態定数テーブル（v39_course 実験1 → v39_course_slim） ────────────────
@@ -155,6 +155,8 @@ def _load_data(cfg: dict) -> pd.DataFrame:
         "race_id", "grade_code", "distance", "track_code", "horse_count",
         "weather_code", "surface_code", "track_condition_code",
         "surface_condition", "distance_category", "race_date", "weight_type",
+        # v48_agari_turn: 回り×馬場適性の groupby キー（FORBIDDEN_COLS で特徴量除外）
+        "race_type_code",
     ]
     # RA には race_date が既にある。SE の race_date と同一のはずだが RA のものを使う
     se = se.drop(columns=["race_date"], errors="ignore")
@@ -182,7 +184,7 @@ def _load_data(cfg: dict) -> pd.DataFrame:
     # 仕様書: docs/specs/2026-07-05-summer-racing-structural-features-design.md
     #   セクション2 候補4・セクション6
     n_before_region = len(df)
-    src_se_path = Path(cfg["data"]["src_parquet_dir"]) / "SE_preprocessed.parquet"
+    src_se_path = resolve_project_path(cfg["data"]["src_parquet_dir"]) / "SE_preprocessed.parquet"
     src_se = pd.read_parquet(src_se_path, columns=["race_id", "ketto_num", "region_code"])
     src_se["race_id"] = src_se["race_id"].astype(str)
     src_se["ketto_num"] = src_se["ketto_num"].astype(str)
@@ -324,6 +326,19 @@ def _build_hist_features(df: pd.DataFrame) -> pd.DataFrame:
         lambda x: x.shift(1).rolling(5, min_periods=1).mean()
     )
 
+    # ─── 上がり3F レース内偏差（v48_agari_turn） ───────────────────────────────
+    # race_avg_agari は当走レース内の他馬を含むが shift(1) で当走除外 → リークなし。
+    # expanding mean（hist_avg_agari3f_dev）は hist_avg_time_dev_* と |r|>=0.7 のため不採用。
+    # 前走1走のみ（hist_last_agari3f_dev）に限定して相関ゲートを通過させる。
+    race_avg_agari = df.groupby("race_id")["time_3f_after"].transform("mean")
+    df["_agari_dev"] = df["time_3f_after"] - race_avg_agari
+    # 上がり3F偏差 − 走破タイム偏差: 「末脚が総合タイム偏差に対してどれだけ上/下か」
+    # 生の agari_dev / time_dev 単独列は hist_last_time_dev と |r|>=0.7 のため不採用。
+    df["_agari_time_gap"] = df["_agari_dev"] - df["_time_dev"]
+    df["hist_last_agari_time_gap"] = grp_horse["_agari_time_gap"].transform(
+        lambda x: x.shift(1)
+    )
+
     # ─── 馬場条件別 最速タイム ──────────────────────────────────────────────────
     # 同実距離×同馬場種別×同馬場状態での過去最速タイム（shift(1) で当該レース除外）
     # NOTE: distance_category だと同カテゴリ内の実距離差（例: 1000m と 1400m で
@@ -364,6 +379,23 @@ def _build_hist_features(df: pd.DataFrame) -> pd.DataFrame:
             lambda x: x.shift(1).expanding().mean()
         )
     )
+    # v48_agari_turn: 回り×馬場（race_type_code）勝率 − 同馬場勝率（回り方向の上乗せ）
+    # 絶対勝率（hist_same_turn_surface_win_rate）は hist_win_rate と |r|>=0.7 のため不採用。
+    if "race_type_code" in df.columns:
+        _hist_turn_surface_wr = (
+            df.groupby(["ketto_num", "race_type_code"])["is_win"].transform(
+                lambda x: x.shift(1).expanding().mean()
+            )
+        )
+        df["hist_turn_surface_win_edge"] = (
+            _hist_turn_surface_wr - df["hist_same_surface_win_rate"]
+        )
+    else:
+        df["hist_turn_surface_win_edge"] = np.nan
+
+    # race_type_code は hist 集約キー専用。parquet 列数を v39+2 に保つため drop。
+    df.drop(columns=["race_type_code"], errors="ignore", inplace=True)
+
     # v39_course: hist_track_size_win_rate（馬×コースサイズのプーリング勝率）は
     # 相関ゲートで hist_win_rate と r=+0.851（>= 0.7）となり不採用。
     # 仕様書（docs/specs/2026-07-03-d1-course-features-design.md 実験1）の例外規定
@@ -449,8 +481,137 @@ def _build_hist_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # 一時列を削除
     df = df.drop(columns=[
-        "_time_dev", "_is_top_grade", "_dist_bin_100", "_rank_top_grade", "_is_front_runner",
+        "_time_dev", "_agari_dev", "_agari_time_gap", "_is_top_grade", "_dist_bin_100",
+        "_rank_top_grade", "_is_front_runner",
     ])
+    return df
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SECTION 3.5: SIX-PARAM HIST FEATURES (v49_six_lap)
+# スライド 2-3 の6パラメータを shift(1) + 直近10走で hist 化する。
+# race_first_3f / race_last_3f は horse_data 由来（レース確定後だが過去走集約のみ使用）。
+# ═══════════════════════════════════════════════════════════════════════════════
+
+SIX_PARAM_ROLL: int = 10
+
+
+def _merge_race_pace_columns(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """horse_data からレースペース（テン3F・上り3F）を race_id でマージする。"""
+    hd_path = resolve_project_path(cfg["data"]["src_parquet_dir"]) / "horse_data.parquet"
+    pace = pd.read_parquet(
+        hd_path, columns=["race_id", "race_first_3f", "race_last_3f"]
+    ).drop_duplicates(subset=["race_id"])
+    pace["race_id"] = pace["race_id"].astype(str)
+    n_before = len(df)
+    df = df.copy()
+    df["race_id"] = df["race_id"].astype(str)
+    df = df.merge(pace, on="race_id", how="left")
+    assert len(df) == n_before, (
+        f"race pace マージで行数が変化: {n_before:,} → {len(df):,}"
+    )
+    return df
+
+
+def _build_six_param_hist_features(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """6パラメータ hist 特徴量（v49_six_lap 専用）。
+
+    相関ゲート通過のため、生の上がり3Fベスト（既存 hist_last_last3f と重複）を避け、
+    レース内偏差・センタリング・ラップバランスを用いる。
+
+    | 列名 | スライド |
+    |------|---------|
+    | hist_competitive_spirit | 勝負根性 |
+    | hist_explosive_agari_gap | 瞬発力（後方→馬券内の末脚偏差 min） |
+    | hist_tracking_power | 追走力 |
+    | hist_pref_lap_balance | 得意ラップ（馬券内 lap_balance 平均） |
+    | hist_dash_ten3f_centered | ダッシュ力（馬券内 ten3F − 馬自身平均） |
+    | hist_stamina_agari_gap | スタミナ（馬券内で遅い末脚偏差 max） |
+
+    スピード（上がり2Fベスト）は JV に2F未収録のため既存 hist_avg_last3f_* で代替。
+    """
+    df = _merge_race_pace_columns(df, cfg)
+    df = df.sort_values(["ketto_num", "race_date"]).reset_index(drop=True)
+
+    winner_time = df.groupby("race_id")["racetime"].transform("min")
+    n_f = (df["distance"] / 200).round().astype(int)
+    first3 = df["race_first_3f"]
+    last3 = df["race_last_3f"]
+    mid_cnt = n_f - 6
+    front_cnt = (n_f - 3).clip(lower=1)
+
+    df["_race_middle_3f"] = np.where(
+        mid_cnt > 0,
+        (winner_time - first3 - last3) / mid_cnt * 3,
+        np.nan,
+    )
+    df["_race_ten_3f"] = first3
+    df["_lap_balance"] = (winner_time - last3) / front_cnt * 3 - last3
+
+    race_avg_agari = df.groupby("race_id")["time_3f_after"].transform("mean")
+    df["_agari_gap"] = df["time_3f_after"] - race_avg_agari
+
+    second_time = df.groupby("race_id")["racetime"].transform(
+        lambda s: s.sort_values().iloc[1] if s.notna().sum() >= 2 else np.nan
+    )
+    df["_win_margin"] = np.where(
+        df["finish_rank"] == 1,
+        second_time - df["racetime"],
+        np.nan,
+    )
+
+    in_money = df["finish_rank"] <= 3
+    back_in_money = in_money & (df["corner_4"] >= 4)
+
+    df["_explosive_src"] = np.where(back_in_money, df["_agari_gap"], np.nan)
+    df["_tracking_src"] = np.where(in_money, df["_race_middle_3f"], np.nan)
+    df["_pref_lap_src"] = np.where(in_money, df["_lap_balance"], np.nan)
+    df["_stamina_src"] = np.where(in_money, df["_agari_gap"], np.nan)
+
+    grp = df.groupby("ketto_num")
+    df["_dash_mean_past"] = grp["_race_ten_3f"].transform(
+        lambda x: x.shift(1).expanding().mean()
+    )
+    df["_dash_src"] = np.where(
+        in_money,
+        df["_race_ten_3f"] - df["_dash_mean_past"],
+        np.nan,
+    )
+
+    roll = SIX_PARAM_ROLL
+
+    df["hist_competitive_spirit"] = grp["_win_margin"].transform(
+        lambda x: x.shift(1).rolling(roll, min_periods=1).max()
+    )
+    df["hist_explosive_agari_gap"] = grp["_explosive_src"].transform(
+        lambda x: x.shift(1).rolling(roll, min_periods=1).min()
+    )
+    df["hist_tracking_power"] = grp["_tracking_src"].transform(
+        lambda x: x.shift(1).rolling(roll, min_periods=1).min()
+    )
+    df["hist_pref_lap_balance"] = grp["_pref_lap_src"].transform(
+        lambda x: x.shift(1).rolling(roll, min_periods=1).mean()
+    )
+    df["hist_dash_ten3f_centered"] = grp["_dash_src"].transform(
+        lambda x: x.shift(1).rolling(roll, min_periods=1).min()
+    )
+    df["hist_stamina_agari_gap"] = grp["_stamina_src"].transform(
+        lambda x: x.shift(1).rolling(roll, min_periods=1).max()
+    )
+
+    df = df.drop(
+        columns=[
+            "race_first_3f", "race_last_3f",
+            "_race_middle_3f", "_race_ten_3f", "_lap_balance", "_agari_gap",
+            "_win_margin", "_explosive_src", "_tracking_src", "_pref_lap_src",
+            "_stamina_src", "_dash_mean_past", "_dash_src",
+        ],
+        errors="ignore",
+    )
+
+    for col in NEW_FEATURE_COLS_BY_VERSION["v49_six_lap"]:
+        print(f"  {col}: NaN率 {df[col].isna().mean():.1%}")
+
     return df
 
 
@@ -1737,6 +1898,15 @@ NEW_FEATURE_COLS_BY_VERSION: dict[str, list[str]] = {
     "v46_small_pool": ["hist_small_course_pool_win_rate_ts"],
     "v47_pace_x": ["front_pref_x_density"],
     "v47_post_small": ["post_position_x_small"],
+    "v48_agari_turn": ["hist_last_agari_time_gap", "hist_turn_surface_win_edge"],
+    "v49_six_lap": [
+        "hist_competitive_spirit",
+        "hist_explosive_agari_gap",
+        "hist_tracking_power",
+        "hist_pref_lap_balance",
+        "hist_dash_ten3f_centered",
+        "hist_stamina_agari_gap",
+    ],
     "v50_hc_norm": [
         "trn_hc_basediff_recent5",
         "trn_hc_basediff_best",
@@ -1899,6 +2069,10 @@ def main() -> None:
         _v48_cols = [c for c in ("hist_last_agari_time_gap", "hist_turn_surface_win_edge") if c in df.columns]
         if _v48_cols:
             df = df.drop(columns=_v48_cols)
+
+    if version == "v49_six_lap":
+        print("\n[3.5] Building six-parameter hist features (v49_six_lap)...")
+        df = _build_six_param_hist_features(df, cfg)
 
     print("\n[4] Building current race features...")
     df = _build_current_features(df, version)
@@ -2153,6 +2327,28 @@ def main() -> None:
         assert "hist_small_course_pool_win_rate_ts" not in df.columns
         assert "course_is_small" not in df.columns
         print(f"\n[8.3] Column count assert PASS: {len(df.columns)} == 133")
+    elif version == "v48_agari_turn":
+        assert len(df.columns) == 134, (
+            f"v48_agari_turn は 134 列（132 + hist_last_agari_time_gap + "
+            f"hist_turn_surface_win_edge）のはずですが "
+            f"{len(df.columns)} 列あります: 差分を確認してください"
+        )
+        assert "hist_last_agari_time_gap" in df.columns
+        assert "hist_turn_surface_win_edge" in df.columns
+        assert "front_pref_x_small" in df.columns, (
+            "front_pref_x_small（v39_course_slim ベース）が失われています"
+        )
+        assert "course_is_small" not in df.columns, "中間変数 course_is_small が残っています"
+        print(f"\n[8.3] Column count assert PASS: {len(df.columns)} == 134")
+    elif version == "v49_six_lap":
+        assert len(df.columns) == 140, (
+            f"v49_six_lap は 140 列（134 + 6パラメータ hist）のはずですが "
+            f"{len(df.columns)} 列あります"
+        )
+        for col in NEW_FEATURE_COLS_BY_VERSION["v49_six_lap"]:
+            assert col in df.columns, f"{col} がありません"
+        assert "hist_last_agari_time_gap" in df.columns
+        print(f"\n[8.3] Column count assert PASS: {len(df.columns)} == 140")
     elif version == "v50_hc_norm":
         assert len(df.columns) == 135, (
             f"v50_hc_norm は 135 列（v39_course_slim の 132 + 新規3列）のはずですが "

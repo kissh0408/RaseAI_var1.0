@@ -2,75 +2,75 @@
   "bins": [
     {
       "bin": 0,
-      "n": 478,
-      "predicted_prob": 0.1543,
-      "actual_hit_rate": 0.113,
-      "diff": -0.0414
+      "n": 486,
+      "predicted_prob": 0.1091,
+      "actual_hit_rate": 0.0947,
+      "diff": -0.0145
     },
     {
       "bin": 1,
-      "n": 477,
-      "predicted_prob": 0.2139,
-      "actual_hit_rate": 0.1614,
-      "diff": -0.0525
+      "n": 648,
+      "predicted_prob": 0.1703,
+      "actual_hit_rate": 0.1373,
+      "diff": -0.0329
     },
     {
       "bin": 2,
-      "n": 478,
-      "predicted_prob": 0.2537,
-      "actual_hit_rate": 0.1715,
-      "diff": -0.0821
+      "n": 299,
+      "predicted_prob": 0.1976,
+      "actual_hit_rate": 0.1672,
+      "diff": -0.0304
     },
     {
       "bin": 3,
-      "n": 477,
-      "predicted_prob": 0.2903,
-      "actual_hit_rate": 0.2306,
-      "diff": -0.0597
+      "n": 501,
+      "predicted_prob": 0.2592,
+      "actual_hit_rate": 0.2116,
+      "diff": -0.0476
     },
     {
       "bin": 4,
-      "n": 478,
-      "predicted_prob": 0.33,
-      "actual_hit_rate": 0.2343,
-      "diff": -0.0957
+      "n": 892,
+      "predicted_prob": 0.3183,
+      "actual_hit_rate": 0.2758,
+      "diff": -0.0426
     },
     {
       "bin": 5,
-      "n": 477,
-      "predicted_prob": 0.3749,
-      "actual_hit_rate": 0.2809,
-      "diff": -0.094
+      "n": 146,
+      "predicted_prob": 0.3321,
+      "actual_hit_rate": 0.3288,
+      "diff": -0.0033
     },
     {
       "bin": 6,
-      "n": 477,
-      "predicted_prob": 0.4259,
-      "actual_hit_rate": 0.2956,
-      "diff": -0.1303
+      "n": 375,
+      "predicted_prob": 0.385,
+      "actual_hit_rate": 0.3227,
+      "diff": -0.0623
     },
     {
       "bin": 7,
-      "n": 478,
-      "predicted_prob": 0.4864,
-      "actual_hit_rate": 0.3891,
-      "diff": -0.0973
+      "n": 854,
+      "predicted_prob": 0.4107,
+      "actual_hit_rate": 0.4286,
+      "diff": 0.0178
     },
     {
       "bin": 8,
-      "n": 477,
-      "predicted_prob": 0.5694,
-      "actual_hit_rate": 0.4675,
-      "diff": -0.1019
+      "n": 342,
+      "predicted_prob": 0.495,
+      "actual_hit_rate": 0.4532,
+      "diff": -0.0418
     },
     {
       "bin": 9,
-      "n": 478,
-      "predicted_prob": 0.7316,
-      "actual_hit_rate": 0.5418,
-      "diff": -0.1898
+      "n": 232,
+      "predicted_prob": 0.6239,
+      "actual_hit_rate": 0.6509,
+      "diff": 0.027
     }
   ],
-  "mean_abs_error": 0.0945,
-  "max_abs_error": 0.1898
+  "mean_abs_error": 0.032,
+  "max_abs_error": 0.0623
 }

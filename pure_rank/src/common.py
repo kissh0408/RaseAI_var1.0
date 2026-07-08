@@ -26,6 +26,12 @@ def load_config() -> dict:
         return json.load(f)
 
 
+def resolve_project_path(path: str | Path) -> Path:
+    """train_config.json の相対パスをリポジトリルート基準で解決する。"""
+    p = Path(path)
+    return p if p.is_absolute() else PROJECT_ROOT / p
+
+
 # ─── 禁止列定義 ────────────────────────────────────────────────────────────────
 # 市場情報（絶対禁止）。create_features.py の混入チェックはこの集合を使う。
 # 万一これらの列が DataFrame に存在した場合は生成段階で即エラーにする。
@@ -38,7 +44,7 @@ FORBIDDEN_MARKET_COLS: frozenset[str] = frozenset({
 # 学習・評価の特徴量から除外する全列（市場情報 + メタ列 + 後出し情報 + ラベル）。
 FORBIDDEN_COLS: frozenset[str] = FORBIDDEN_MARKET_COLS | frozenset({
     # 一時作業列
-    "_time_dev",
+    "_time_dev", "_agari_dev", "_agari_time_gap",
     # RA / SE のメタ列（特徴量として不要）
     "year", "month_day", "kai", "nichi", "race_num",
     "horse_num", "registered_count", "finish_count",
