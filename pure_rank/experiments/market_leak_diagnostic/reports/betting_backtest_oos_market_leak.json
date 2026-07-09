@@ -1,0 +1,8 @@
+{
+  "version": "benter_betting_oos_fold2",
+  "status": "skipped",
+  "reason": "VALID threshold tuning failed",
+  "ev_threshold_warnings": [
+    "No grid threshold met min_bets=50 on VALID (n_rows=45828); fallback to grid[0]=1.02"
+  ]
+}

@@ -12,6 +12,7 @@ train.py / evaluate.py / create_features.py 等に重複していた
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -74,6 +75,15 @@ FORBIDDEN_COLS: frozenset[str] = FORBIDDEN_MARKET_COLS | frozenset({
 
 # ─── 特徴量列の選択 ────────────────────────────────────────────────────────────
 
+# FORBIDDEN_MARKET_COLS は完全一致の禁止リストのため、市場情報由来の列が
+# 未登録の名前（例: implied_prob, book_pct, field_strength_market）で紛れ込むと
+# 素通りしてしまう。この正規表現は完全一致リストを補完する第二の防波堤として、
+# 疑わしい列名が特徴量に残っていたら学習前に即座にエラーで止める。
+SUSPICIOUS_MARKET_NAME_PATTERN = re.compile(
+    r"odds|ninki|market|book_?pct|implied_?prob|win_?prob", re.IGNORECASE
+)
+
+
 def get_feature_cols(df: pd.DataFrame, cfg: dict) -> list[str]:
     """学習・評価に使う特徴量列を返す。
 
@@ -83,10 +93,17 @@ def get_feature_cols(df: pd.DataFrame, cfg: dict) -> list[str]:
     """
     id_cols = set(cfg["features"]["id_cols"])
     exclude = id_cols | FORBIDDEN_COLS
-    return [
+    feature_cols = [
         c for c in df.columns
         if c not in exclude and df[c].dtype not in ["object", "string"]
     ]
+    suspicious = [c for c in feature_cols if SUSPICIOUS_MARKET_NAME_PATTERN.search(c)]
+    if suspicious:
+        raise ValueError(
+            f"市場情報混入の疑いがある列名が特徴量に含まれています: {suspicious}。"
+            f"FORBIDDEN_MARKET_COLS へ追加するか、列名を確認してください。"
+        )
+    return feature_cols
 
 
 # ─── LambdaRank group 配列 ─────────────────────────────────────────────────────

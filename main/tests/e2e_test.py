@@ -18,6 +18,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "main"))
@@ -333,6 +334,10 @@ def test_fusion_smoke() -> None:
         _fail("fusion_probs", str(p))
 
 
+@pytest.mark.skip(
+    reason="ワイド/馬連/ポートフォリオKellyは2026-07-08のBenter再構築でstrategy/ごとアーカイブ済み。"
+    "現行betting/src/は単勝のみ（複勝は未解禁）で対応機能なし。"
+)
 def test_wide_phase15_recommendation_smoke() -> None:
     """phase1_5 + O3 オッズでワイド EV 推奨が生成されること。"""
     print("\nTest 11: wide phase1_5 recommendation smoke")
@@ -390,6 +395,10 @@ def test_wide_phase15_recommendation_smoke() -> None:
         _fail("win bets missing", str(rec.columns.tolist()))
 
 
+@pytest.mark.skip(
+    reason="ポートフォリオKelly（win+wide混合）は2026-07-08のBenter再構築でstrategy/ごとアーカイブ済み。"
+    "現行betting/src/は単勝のみ対応。"
+)
 def test_portfolio_kelly_smoke() -> None:
     """C2: portfolio_kelly 有効時、同一レース win+wide の stake 合計が cap 以内。"""
     print("\nTest 12: portfolio Kelly win+wide smoke")
@@ -451,6 +460,10 @@ def test_portfolio_kelly_smoke() -> None:
         _fail("win+wide mix", f"win={has_win} wide={has_wide}")
 
 
+@pytest.mark.skip(
+    reason="ワイド/馬連anchor KPI（evaluation.calculate_ranking_metrics）は現行evaluation/に未移植。"
+    "対応するワイド/馬連ベッティング機能自体がstrategy/アーカイブでBenter再構築範囲外のため。"
+)
 def test_combo_anchor_kpi_smoke() -> None:
     """ワイド/馬連 anchor KPI が evaluation モジュールで計算できること。"""
     print("\nTest 10: combo anchor KPI smoke")

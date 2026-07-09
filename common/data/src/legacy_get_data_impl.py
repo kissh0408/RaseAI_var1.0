@@ -441,7 +441,10 @@ WE_SCHEMA = {
     "record_separator": (31, 2),
 }
 
-# 速報馬体重 (WH)
+# 速報馬体重 (WH): docs/JV-Data.md 101.馬体重（WH）と照合して修正（2026-07-09）。
+# 旧定義は単一馬前提のフラットな座標で、実レコードの繰返しグループ構造
+# （開始位置36、18頭×45バイト）と一致していなかった（実運用は raw_hex を
+# 再パースする _expand_wh_realtime_row() 側の別定数を使っており実害はなかった）。
 WH_SCHEMA = {
     "record_id": (1, 2),
     "data_kubun": (3, 1),
@@ -451,16 +454,20 @@ WH_SCHEMA = {
     "kai": (22, 2),
     "nichi": (24, 2),
     "race_num": (26, 2),
-    "horse_num": (29, 2),
-    "horse_weight": (31, 3),
-    "weight_change_sign": (34, 1),
-    "weight_change": (35, 3),
-    "record_separator": (38, 2),
+    "announce_datetime": (28, 8),
 }
+for _i in range(1, 19):
+    _base_pos = 36 + (_i - 1) * 45
+    WH_SCHEMA[f"wh_{_i}_horse_num"] = (_base_pos + 0, 2)
+    WH_SCHEMA[f"wh_{_i}_horse_name"] = (_base_pos + 2, 36)
+    WH_SCHEMA[f"wh_{_i}_horse_weight"] = (_base_pos + 38, 3)
+    WH_SCHEMA[f"wh_{_i}_weight_change_sign"] = (_base_pos + 41, 1)
+    WH_SCHEMA[f"wh_{_i}_weight_change"] = (_base_pos + 42, 3)
+WH_SCHEMA["record_separator"] = (846, 2)
 
 # 出走取消・競走除外 (AV) / 騎手変更 (JC) / 発走時刻変更 (TC) / コース変更 (CC)
-# NOTE:
-# 0B14(速報開催情報一括)向けの最小スキーマ。詳細項目は環境の仕様書に応じて拡張してください。
+# docs/JV-Data.md 103〜106 と照合して修正（2026-07-09）。旧 detail_code は
+# 実在フィールドではなく発表月日時分の途中バイトを指していた。
 AV_SCHEMA = {
     "record_id": (1, 2),
     "data_kubun": (3, 1),
@@ -470,8 +477,11 @@ AV_SCHEMA = {
     "kai": (22, 2),
     "nichi": (24, 2),
     "race_num": (26, 2),
-    "detail_code": (28, 2),
-    "record_separator": (30, 2),
+    "announce_datetime": (28, 8),
+    "horse_num": (36, 2),
+    "horse_name": (38, 36),
+    "reason_code": (74, 3),
+    "record_separator": (77, 2),
 }
 
 JC_SCHEMA = {
@@ -483,9 +493,18 @@ JC_SCHEMA = {
     "kai": (22, 2),
     "nichi": (24, 2),
     "race_num": (26, 2),
-    "horse_num": (29, 2),
-    "detail_code": (31, 2),
-    "record_separator": (33, 2),
+    "announce_datetime": (28, 8),
+    "horse_num": (36, 2),
+    "horse_name": (38, 36),
+    "after_burden_weight": (74, 3),
+    "after_jockey_code": (77, 5),
+    "after_jockey_name": (82, 34),
+    "after_jockey_apprentice_code": (116, 1),
+    "before_burden_weight": (117, 3),
+    "before_jockey_code": (120, 5),
+    "before_jockey_name": (125, 34),
+    "before_jockey_apprentice_code": (159, 1),
+    "record_separator": (160, 2),
 }
 
 TC_SCHEMA = {
@@ -497,8 +516,10 @@ TC_SCHEMA = {
     "kai": (22, 2),
     "nichi": (24, 2),
     "race_num": (26, 2),
-    "detail_code": (28, 2),
-    "record_separator": (30, 2),
+    "announce_datetime": (28, 8),
+    "after_start_time": (36, 4),
+    "before_start_time": (40, 4),
+    "record_separator": (44, 2),
 }
 
 CC_SCHEMA = {
@@ -510,8 +531,13 @@ CC_SCHEMA = {
     "kai": (22, 2),
     "nichi": (24, 2),
     "race_num": (26, 2),
-    "detail_code": (28, 2),
-    "record_separator": (30, 2),
+    "announce_datetime": (28, 8),
+    "after_distance": (36, 4),
+    "after_track_code": (40, 2),
+    "before_distance": (42, 4),
+    "before_track_code": (46, 2),
+    "reason_code": (48, 1),
+    "record_separator": (49, 2),
 }
 
 O2_SCHEMA = {
@@ -754,7 +780,6 @@ def _load_existing_dates_without_pandas(filepath: str, rec_id: str) -> set:
             "kai",
             "nichi",
             "race_num",
-            "horse_num",
         ],
         "JC": [
             "year",
@@ -858,7 +883,7 @@ def load_existing_dates(filepath, rec_id):
                 "nichi",
                 "race_num",
             ]
-        elif rec_id in ["WE", "AV", "TC", "CC"]:
+        elif rec_id in ["WE", "AV", "TC", "CC", "WH"]:
             usecols = [
                 "year",
                 "month_day",
@@ -867,7 +892,7 @@ def load_existing_dates(filepath, rec_id):
                 "nichi",
                 "race_num",
             ]
-        elif rec_id in ["WH", "JC"]:
+        elif rec_id == "JC":
             usecols = [
                 "year",
                 "month_day",
@@ -945,7 +970,7 @@ def load_existing_dates(filepath, rec_id):
                         for row in df_filled.itertuples(index=False, name=None)
                     )
 
-        elif rec_id in ["WE", "AV", "TC", "CC"]:
+        elif rec_id in ["WE", "AV", "TC", "CC", "WH"]:
             required_cols = [
                 "year",
                 "month_day",
@@ -960,7 +985,7 @@ def load_existing_dates(filepath, rec_id):
                     tuple(row) for row in df_filled.itertuples(index=False, name=None)
                 )
 
-        elif rec_id in ["WH", "JC"]:
+        elif rec_id == "JC":
             required_cols = [
                 "year",
                 "month_day",
@@ -1063,7 +1088,9 @@ def _extract_record_key(record, rec_id):
         重複チェック用のキー（タプルまたは文字列、Noneの場合はキーなし）
     """
     if rec_id in {"RA", "SE", "HR", "WH", "AV", "TC", "CC"}:
-        if rec_id in {"SE", "WH"}:
+        # WH は SE と異なり「1レコード=1レース分18頭まとめて」の構造
+        # （docs/JV-Data.md 101.馬体重）のため、horse_num は含めずレース単位でキー化する。
+        if rec_id == "SE":
             return (
                 record.get("year", ""),
                 record.get("month_day", ""),

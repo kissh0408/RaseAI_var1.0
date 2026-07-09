@@ -1,0 +1,478 @@
+{
+  "protocol": {
+    "test_period": "2025-01-01..",
+    "n_races": 4775,
+    "n_horses": 66020,
+    "scores_source": "pure_rank\\experiments\\place_direct\\scores\\probs_place_direct_fold2_oos.parquet",
+    "eps": 1e-12,
+    "bootstrap_samples": 1000
+  },
+  "overall": {
+    "stern": {
+      "logloss": 0.4003477616722795,
+      "brier": 0.12802480781167316,
+      "calibration_max_error_pp": 4.528241481640338,
+      "mean_pred": 0.2169797031202666,
+      "actual_rate": 0.21722205392305363,
+      "n": 66020
+    },
+    "harville": {
+      "logloss": 0.40897025529748465,
+      "brier": 0.13055182001402268,
+      "calibration_max_error_pp": 13.812851500534052,
+      "mean_pred": 0.2169797031202666,
+      "actual_rate": 0.21722205392305363,
+      "n": 66020
+    },
+    "direct_raw": {
+      "logloss": 0.4192975453525957,
+      "brier": 0.13470352789052836,
+      "calibration_max_error_pp": 3.4912875077943273,
+      "mean_pred": 0.222710125686239,
+      "actual_rate": 0.21722205392305363,
+      "n": 66020
+    },
+    "direct_norm": {
+      "logloss": 0.4176549029990249,
+      "brier": 0.13388853759545086,
+      "calibration_max_error_pp": 6.933762919331032,
+      "mean_pred": 0.21697970312026602,
+      "actual_rate": 0.21722205392305363,
+      "n": 66020
+    }
+  },
+  "bootstrap_logloss_diff_ci95": {
+    "direct_raw_vs_stern": {
+      "diff_mean": 0.01893378644341702,
+      "ci_95": [
+        0.017359852935834637,
+        0.020642503614405932
+      ],
+      "ci_excludes_zero": true
+    },
+    "direct_norm_vs_stern": {
+      "diff_mean": 0.017316640942244624,
+      "ci_95": [
+        0.01545002412713955,
+        0.019343257850060146
+      ],
+      "ci_excludes_zero": true
+    },
+    "harville_vs_stern": {
+      "diff_mean": 0.008615130943216247,
+      "ci_95": [
+        0.007306251832764723,
+        0.009914078179568445
+      ],
+      "ci_excludes_zero": true
+    }
+  },
+  "head_count_breakdown_reference_only": {
+    "le7": {
+      "n": 816,
+      "n_races": 126,
+      "stern": {
+        "logloss": 0.5118824997472011,
+        "brier": 0.16913662496308474,
+        "calibration_max_error_pp": 10.839455084144461,
+        "mean_pred": 0.4632352941176471,
+        "actual_rate": 0.4632352941176471,
+        "n": 816
+      },
+      "harville": {
+        "logloss": 0.5311170303605165,
+        "brier": 0.17261647165644348,
+        "calibration_max_error_pp": 10.66728343381334,
+        "mean_pred": 0.4632352941176471,
+        "actual_rate": 0.4632352941176471,
+        "n": 816
+      },
+      "direct_raw": {
+        "logloss": 0.557977402872598,
+        "brier": 0.18824788803923526,
+        "calibration_max_error_pp": 4.249927717948109,
+        "mean_pred": 0.4546937003520917,
+        "actual_rate": 0.4632352941176471,
+        "n": 816
+      },
+      "direct_norm": {
+        "logloss": 0.5791940285654419,
+        "brier": 0.18555079972095953,
+        "calibration_max_error_pp": 5.50918118298287,
+        "mean_pred": 0.4632352941176238,
+        "actual_rate": 0.4632352941176471,
+        "n": 816
+      }
+    },
+    "ge8": {
+      "n": 65204,
+      "n_races": 4649,
+      "stern": {
+        "logloss": 0.39895195242332027,
+        "brier": 0.1275103111121524,
+        "calibration_max_error_pp": 4.377943683421814,
+        "mean_pred": 0.21389792037298325,
+        "actual_rate": 0.2141433040917735,
+        "n": 65204
+      },
+      "harville": {
+        "logloss": 0.40744164097242136,
+        "brier": 0.13002539900089133,
+        "calibration_max_error_pp": 14.173785649418946,
+        "mean_pred": 0.21389792037298325,
+        "actual_rate": 0.2141433040917735,
+        "n": 65204
+      },
+      "direct_raw": {
+        "logloss": 0.41756202661545805,
+        "brier": 0.13403344326563807,
+        "calibration_max_error_pp": 7.892977616022023,
+        "mean_pred": 0.219806951081501,
+        "actual_rate": 0.2141433040917735,
+        "n": 65204
+      },
+      "direct_norm": {
+        "logloss": 0.4156333103595826,
+        "brier": 0.13324200661737567,
+        "calibration_max_error_pp": 7.4757233625069475,
+        "mean_pred": 0.21389792037298297,
+        "actual_rate": 0.2141433040917735,
+        "n": 65204
+      }
+    }
+  },
+  "top1_hit_rate_reference_only": {
+    "direct_raw": {
+      "n_races": 4775,
+      "n_hits": 2949,
+      "hit_rate": 0.6175916230366492
+    },
+    "direct_norm": {
+      "n_races": 4775,
+      "n_hits": 2949,
+      "hit_rate": 0.6175916230366492
+    }
+  },
+  "baseline_reference": {
+    "model_top1_hit_rate": 0.6159162303664921,
+    "favorite_hit_rate": 0.6552879581151833
+  },
+  "calibration_curves": {
+    "stern": [
+      {
+        "bin_lo": 0.0,
+        "bin_hi": 0.1,
+        "n": 25562,
+        "mean_pred": 0.05349283376912679,
+        "actual_rate": 0.0397464987090212
+      },
+      {
+        "bin_lo": 0.1,
+        "bin_hi": 0.2,
+        "n": 14501,
+        "mean_pred": 0.14528570603735977,
+        "actual_rate": 0.1532997724294876
+      },
+      {
+        "bin_lo": 0.2,
+        "bin_hi": 0.30000000000000004,
+        "n": 8330,
+        "mean_pred": 0.24603024129040335,
+        "actual_rate": 0.26626650660264106
+      },
+      {
+        "bin_lo": 0.30000000000000004,
+        "bin_hi": 0.4,
+        "n": 6039,
+        "mean_pred": 0.34735327387073367,
+        "actual_rate": 0.35055472760390793
+      },
+      {
+        "bin_lo": 0.4,
+        "bin_hi": 0.5,
+        "n": 4310,
+        "mean_pred": 0.4469800263672602,
+        "actual_rate": 0.46218097447795825
+      },
+      {
+        "bin_lo": 0.5,
+        "bin_hi": 0.6000000000000001,
+        "n": 3006,
+        "mean_pred": 0.5465217050456991,
+        "actual_rate": 0.5548902195608783
+      },
+      {
+        "bin_lo": 0.6000000000000001,
+        "bin_hi": 0.7000000000000001,
+        "n": 1926,
+        "mean_pred": 0.6461577966837905,
+        "actual_rate": 0.6547248182762202
+      },
+      {
+        "bin_lo": 0.7000000000000001,
+        "bin_hi": 0.8,
+        "n": 1239,
+        "mean_pred": 0.7471808606994603,
+        "actual_rate": 0.7433414043583535
+      },
+      {
+        "bin_lo": 0.8,
+        "bin_hi": 0.9,
+        "n": 802,
+        "mean_pred": 0.8457811679336104,
+        "actual_rate": 0.800498753117207
+      },
+      {
+        "bin_lo": 0.9,
+        "bin_hi": 1.0,
+        "n": 305,
+        "mean_pred": 0.9371415428812332,
+        "actual_rate": 0.9278688524590164
+      }
+    ],
+    "harville": [
+      {
+        "bin_lo": 0.0,
+        "bin_hi": 0.1,
+        "n": 31995,
+        "mean_pred": 0.036939028986138905,
+        "actual_rate": 0.056071261134552276
+      },
+      {
+        "bin_lo": 0.1,
+        "bin_hi": 0.2,
+        "n": 10237,
+        "mean_pred": 0.14473892821039108,
+        "actual_rate": 0.18843411155611997
+      },
+      {
+        "bin_lo": 0.2,
+        "bin_hi": 0.30000000000000004,
+        "n": 5835,
+        "mean_pred": 0.2465302158440374,
+        "actual_rate": 0.27866323907455015
+      },
+      {
+        "bin_lo": 0.30000000000000004,
+        "bin_hi": 0.4,
+        "n": 4412,
+        "mean_pred": 0.3472989752920287,
+        "actual_rate": 0.3374886672710789
+      },
+      {
+        "bin_lo": 0.4,
+        "bin_hi": 0.5,
+        "n": 3540,
+        "mean_pred": 0.4473951872049819,
+        "actual_rate": 0.4129943502824859
+      },
+      {
+        "bin_lo": 0.5,
+        "bin_hi": 0.6000000000000001,
+        "n": 2944,
+        "mean_pred": 0.5489599558247388,
+        "actual_rate": 0.47248641304347827
+      },
+      {
+        "bin_lo": 0.6000000000000001,
+        "bin_hi": 0.7000000000000001,
+        "n": 2270,
+        "mean_pred": 0.6478208602168544,
+        "actual_rate": 0.5449339207048458
+      },
+      {
+        "bin_lo": 0.7000000000000001,
+        "bin_hi": 0.8,
+        "n": 1856,
+        "mean_pred": 0.7476806221869093,
+        "actual_rate": 0.6320043103448276
+      },
+      {
+        "bin_lo": 0.8,
+        "bin_hi": 0.9,
+        "n": 1466,
+        "mean_pred": 0.8468597564787375,
+        "actual_rate": 0.708731241473397
+      },
+      {
+        "bin_lo": 0.9,
+        "bin_hi": 1.0,
+        "n": 1465,
+        "mean_pred": 0.949484237500112,
+        "actual_rate": 0.8197952218430035
+      }
+    ],
+    "direct_raw": [
+      {
+        "bin_lo": 0.0,
+        "bin_hi": 0.1,
+        "n": 21852,
+        "mean_pred": 0.05213158933056207,
+        "actual_rate": 0.04237598389163463
+      },
+      {
+        "bin_lo": 0.1,
+        "bin_hi": 0.2,
+        "n": 15698,
+        "mean_pred": 0.1461663397198618,
+        "actual_rate": 0.14383997961523762
+      },
+      {
+        "bin_lo": 0.2,
+        "bin_hi": 0.30000000000000004,
+        "n": 10089,
+        "mean_pred": 0.24716497435627852,
+        "actual_rate": 0.25076816334621865
+      },
+      {
+        "bin_lo": 0.30000000000000004,
+        "bin_hi": 0.4,
+        "n": 6756,
+        "mean_pred": 0.3469496123027737,
+        "actual_rate": 0.3389579632918887
+      },
+      {
+        "bin_lo": 0.4,
+        "bin_hi": 0.5,
+        "n": 4714,
+        "mean_pred": 0.4473186806082597,
+        "actual_rate": 0.4302078913873568
+      },
+      {
+        "bin_lo": 0.5,
+        "bin_hi": 0.6000000000000001,
+        "n": 3219,
+        "mean_pred": 0.5473317875625534,
+        "actual_rate": 0.53215284249767
+      },
+      {
+        "bin_lo": 0.6000000000000001,
+        "bin_hi": 0.7000000000000001,
+        "n": 2203,
+        "mean_pred": 0.6457438236699764,
+        "actual_rate": 0.6536541080344984
+      },
+      {
+        "bin_lo": 0.7000000000000001,
+        "bin_hi": 0.8,
+        "n": 1161,
+        "mean_pred": 0.743996926663657,
+        "actual_rate": 0.7493540051679587
+      },
+      {
+        "bin_lo": 0.8,
+        "bin_hi": 0.9,
+        "n": 319,
+        "mean_pred": 0.8365604791540316,
+        "actual_rate": 0.8714733542319749
+      },
+      {
+        "bin_lo": 0.9,
+        "bin_hi": 1.0,
+        "n": 9,
+        "mean_pred": 0.916294114537577,
+        "actual_rate": 0.8888888888888888
+      }
+    ],
+    "direct_norm": [
+      {
+        "bin_lo": 0.0,
+        "bin_hi": 0.1,
+        "n": 22006,
+        "mean_pred": 0.052059825490345234,
+        "actual_rate": 0.04117058983913478
+      },
+      {
+        "bin_lo": 0.1,
+        "bin_hi": 0.2,
+        "n": 15759,
+        "mean_pred": 0.14568740294483262,
+        "actual_rate": 0.14201408718827338
+      },
+      {
+        "bin_lo": 0.2,
+        "bin_hi": 0.30000000000000004,
+        "n": 10538,
+        "mean_pred": 0.24643518523562055,
+        "actual_rate": 0.25336876067565
+      },
+      {
+        "bin_lo": 0.30000000000000004,
+        "bin_hi": 0.4,
+        "n": 6995,
+        "mean_pred": 0.34740641170636566,
+        "actual_rate": 0.3543959971408149
+      },
+      {
+        "bin_lo": 0.4,
+        "bin_hi": 0.5,
+        "n": 4665,
+        "mean_pred": 0.4467039166653156,
+        "actual_rate": 0.4555198285101822
+      },
+      {
+        "bin_lo": 0.5,
+        "bin_hi": 0.6000000000000001,
+        "n": 3044,
+        "mean_pred": 0.5458341430707676,
+        "actual_rate": 0.5706307490144547
+      },
+      {
+        "bin_lo": 0.6000000000000001,
+        "bin_hi": 0.7000000000000001,
+        "n": 1837,
+        "mean_pred": 0.6432972359873781,
+        "actual_rate": 0.6902558519324986
+      },
+      {
+        "bin_lo": 0.7000000000000001,
+        "bin_hi": 0.8,
+        "n": 756,
+        "mean_pred": 0.7424545335508603,
+        "actual_rate": 0.746031746031746
+      },
+      {
+        "bin_lo": 0.8,
+        "bin_hi": 0.9,
+        "n": 293,
+        "mean_pred": 0.8403086478528388,
+        "actual_rate": 0.8225255972696246
+      },
+      {
+        "bin_lo": 0.9,
+        "bin_hi": 1.0,
+        "n": 127,
+        "mean_pred": 0.9591014087208694,
+        "actual_rate": 0.889763779527559
+      }
+    ]
+  },
+  "leak_check": {
+    "per_series": {
+      "direct_raw": {
+        "logloss": 0.4192975453525957,
+        "improvement_vs_stern": -0.04733330742542865,
+        "leak_suspected": false
+      },
+      "direct_norm": {
+        "logloss": 0.4176549029990249,
+        "improvement_vs_stern": -0.043230268740487875,
+        "leak_suspected": false
+      }
+    },
+    "any_leak_suspected": false
+  },
+  "verdict": "not_superior_no_reattempt",
+  "verdict_detail": {
+    "direct_raw": {
+      "logloss_improves_vs_stern": false,
+      "calibration_improves_vs_stern": true,
+      "both_improve": false
+    },
+    "direct_norm": {
+      "logloss_improves_vs_stern": false,
+      "calibration_improves_vs_stern": false,
+      "both_improve": false
+    }
+  }
+}

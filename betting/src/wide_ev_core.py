@@ -65,6 +65,13 @@ def load_wide_odds_lookup(
         if "odds_status" in df.columns:
             df = df[df["odds_status"] == "ok"].copy()
         df = df[df["odds"].notna()].copy()
+        # 注意（2026-07-09）: 当初「odds>9999.9は_parse_odds_tenthのover_limitセンチネル
+        # (9999.9)を超える異常値」と誤判定してここで除外していたが、WinOdds由来の
+        # Harville理論オッズと突き合わせたところ、数万倍の値も含め実オッズ側の全ペアが
+        # 理論値に対して一定比率（約1.333倍=控除率25%相当）で一致することを確認した。
+        # つまり大頭数レースの超大穴ワイド/馬連は数万倍に達するのが数学的に正常であり、
+        # 9999.9上限は該当しない（誤った修正だったため削除済み）。
+        df = df[df["odds"] > 1.0].copy()
         if df.empty:
             continue
         df["race_id_str"] = df["race_id"].apply(lambda x: str(int(x)))

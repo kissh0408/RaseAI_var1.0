@@ -1,0 +1,69 @@
+{
+  "version": "benter_oos_fold2",
+  "protocol": {
+    "l1_scores": "fold2-only 5-seed ensemble (train<2023; 2024/2025 fully OOS)",
+    "fit_period": "2023-01-01..2024-12-31",
+    "test_period": "2025-01-01..",
+    "caveat": "2023 was fold2 early-stopping year (weak contamination, model selection only)",
+    "formal_judgment": "formal_fit_2023_2024"
+  },
+  "formal": {
+    "label": "formal_fit_2023_2024",
+    "alpha": 0.0,
+    "beta": 1.034305644563957,
+    "market_only_beta": 1.0343057679845067,
+    "lam2": 0.6018023701389773,
+    "lam3": 0.6381106677900887,
+    "lrt_p_value": 1.0,
+    "fit_n_races": 6786,
+    "test_logloss_fusion": 1.9312363898854672,
+    "test_logloss_market": 1.931236392278456,
+    "test_top1": 0.3290052356020942,
+    "calibration_max_error_pp": 7.150921971914492,
+    "gates": {
+      "logloss_beats_market": true,
+      "top1_gate_33pct": false,
+      "phase2_pass": false
+    }
+  },
+  "sensitivity": {
+    "label": "sensitivity_fit_2024_only",
+    "alpha": 0.0,
+    "beta": 1.0445206496791488,
+    "market_only_beta": 1.0445204471824567,
+    "lam2": 0.5987265386440022,
+    "lam3": 0.6504686514319196,
+    "lrt_p_value": 1.0,
+    "fit_n_races": 3392,
+    "test_logloss_fusion": 1.931478093612387,
+    "test_logloss_market": 1.9314780879596218,
+    "test_top1": 0.3290052356020942,
+    "calibration_max_error_pp": 9.87822215999138,
+    "gates": {
+      "logloss_beats_market": false,
+      "top1_gate_33pct": false,
+      "phase2_pass": false
+    }
+  },
+  "config": {
+    "version": "benter_v1",
+    "scores_version": "v39_course_slim",
+    "scores_path": "pure_rank/data/03_scores/scores_v39_course_slim.parquet",
+    "q_method": "proportional",
+    "q_power": 0.81,
+    "stern_lam2": 1.0,
+    "stern_lam3": 1.0,
+    "fit": {
+      "alpha_bounds": [
+        0.0,
+        5.0
+      ],
+      "beta_bounds": [
+        0.0,
+        3.0
+      ],
+      "market_only_beta": true
+    },
+    "walkforward_folds": "evaluation.splits.get_walkforward_folds"
+  }
+}

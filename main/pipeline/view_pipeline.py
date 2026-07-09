@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from main.jv_subprocess import run_with_32bit_python
+from common.data.src.jv_subprocess import run_with_32bit_python
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MODELS_DIR = PROJECT_ROOT / "model_training" / "models"

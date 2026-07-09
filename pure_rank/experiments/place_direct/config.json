@@ -1,0 +1,34 @@
+{
+  "_comment": "place_direct 実験専用 config。本番 pure_rank/config/train_config.json は読み取りのみで参照し、書き換えない。値は仕様書 2026-07-09-place-direct-prediction-spec.md §3.2 のとおり。",
+  "model": {
+    "objective": "binary",
+    "metric": "binary_logloss",
+    "num_leaves": 63,
+    "min_child_samples": 50,
+    "reg_alpha": 1.0,
+    "reg_lambda": 2.0,
+    "learning_rate": 0.05,
+    "n_estimators": 800
+  },
+  "training": {
+    "seeds": [42, 43, 44, 45, 46],
+    "fold": 2,
+    "fold_valid_years": ["2022", "2023", "2024"],
+    "early_stopping_rounds": 50,
+    "log_eval_period": 50,
+    "es_year": "2023",
+    "train_end": "2022-12-31",
+    "test_start": "2025-01-01"
+  },
+  "place_prob": {
+    "lam2_stern": 0.6017839448116524,
+    "lam3_stern": 0.6381161426667171,
+    "lam2_harville": 1.0,
+    "lam3_harville": 1.0,
+    "source": "evaluation/reports/fusion_oos_fold2.json:formal (alpha=0.0, beta=1.0343062592772612)"
+  },
+  "normalize": {
+    "target_sum": 3.0,
+    "max_iter": 10
+  }
+}

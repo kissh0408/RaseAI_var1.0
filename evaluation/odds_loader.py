@@ -8,30 +8,44 @@ from pathlib import Path
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "pure_rank" / "src"))
-
-from common import load_config, resolve_project_path  # noqa: E402
+_PURE_RANK_SRC = str(ROOT / "pure_rank" / "src")
 
 
 def _load_combined_win_odds_lookup() -> dict[str, dict[int, float]]:
-    """Load win odds via simulate_ev helpers (WinOdds CSV + SE parquet fallback)."""
-    from simulate_ev import _build_win_odds_lookup, _load_win_odds_for_simulation
+    """Load win odds via simulate_ev helpers (WinOdds CSV + SE parquet fallback).
 
-    cfg = load_config()
-    odds_dir = resolve_project_path("common/data/output/odds")
-    years = list(range(2018, 2027))
+    pure_rank/src を sys.path に入れると同ディレクトリの common.py がトップレベルの
+    common パッケージ（common/data/...）をシャドウし、後続テストの
+    `from common.data...` import を壊す（'common' is not a package）。
+    このため挿入は本関数内に限定し、終了時に必ず後始末する。
+    """
+    inserted = _PURE_RANK_SRC not in sys.path
+    if inserted:
+        sys.path.insert(0, _PURE_RANK_SRC)
     try:
-        return _load_win_odds_for_simulation(cfg, years, odds_dir)
-    except Exception:
-        raw = _build_win_odds_lookup(years, odds_dir)
-        flat: dict[str, dict[int, float]] = {}
-        for rid, horses in raw.items():
-            flat[rid] = {
-                h: float(v[0])
-                for h, v in horses.items()
-                if v[0] is not None and float(v[0]) > 0
-            }
-        return flat
+        from common import load_config, resolve_project_path
+        from simulate_ev import _build_win_odds_lookup, _load_win_odds_for_simulation
+
+        cfg = load_config()
+        odds_dir = resolve_project_path("common/data/output/odds")
+        years = list(range(2018, 2027))
+        try:
+            return _load_win_odds_for_simulation(cfg, years, odds_dir)
+        except Exception:
+            raw = _build_win_odds_lookup(years, odds_dir)
+            flat: dict[str, dict[int, float]] = {}
+            for rid, horses in raw.items():
+                flat[rid] = {
+                    h: float(v[0])
+                    for h, v in horses.items()
+                    if v[0] is not None and float(v[0]) > 0
+                }
+            return flat
+    finally:
+        if inserted:
+            sys.path.remove(_PURE_RANK_SRC)
+            sys.modules.pop("common", None)
+            sys.modules.pop("simulate_ev", None)
 
 
 def attach_odds_from_lookup(

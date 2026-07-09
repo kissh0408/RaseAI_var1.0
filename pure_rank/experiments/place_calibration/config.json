@@ -1,0 +1,57 @@
+{
+  "_comment": "place_calibration 実験専用 config。仕様書 docs/specs/2026-07-09-stern-calibration-spec.md の値を収納する受け皿。後出し変更禁止。",
+  "series": ["s0", "a1", "a2", "b1", "b2"],
+  "fit_period": {
+    "start": "2023-01-01",
+    "end": "2024-12-31",
+    "_note": "prob_fusion.src.oos_protocol.FIT_START/FIT_END と同一。formal lambda fit と同期間で公平比較する（仕様書 §5）。"
+  },
+  "test_period": {
+    "start": "2025-01-01",
+    "expected_n_races": 4775,
+    "expected_n_horses": 66020
+  },
+  "fusion": {
+    "alpha": 0.0,
+    "beta": 1.0343062592772612,
+    "source": "evaluation/reports/fusion_oos_fold2.json:formal"
+  },
+  "s0_baseline": {
+    "lam2": 0.6017839448116524,
+    "lam3": 0.6381161426667171,
+    "source": "evaluation/reports/fusion_oos_fold2.json:formal",
+    "fit_n_races_formal": 6786,
+    "expected_logloss": 0.4003477616722795,
+    "expected_calibration_max_error_pp": 4.528241481640338,
+    "logloss_tol": 0.0005,
+    "calibration_tol_pp": 0.05
+  },
+  "lambda_fit": {
+    "bounds": [[0.1, 3.0], [0.1, 3.0]],
+    "init_lam2": 0.6017839448116524,
+    "init_lam3": 0.6381161426667171,
+    "bands": ["le7", "ge8"],
+    "band_boundary_max_le7": 7,
+    "_note": "頭数帯は 5–7頭 / 8頭以上の2帯に事前固定。後出し変更禁止（仕様書 §3.1）。"
+  },
+  "isotonic": {
+    "y_min": 0.0,
+    "y_max": 1.0,
+    "out_of_bounds": "clip"
+  },
+  "normalize": {
+    "target_sum": 3.0,
+    "max_iter": 10
+  },
+  "bootstrap": {
+    "samples": 1000,
+    "seed": 42
+  },
+  "leak_threshold": {
+    "logloss_improvement_pct": 0.10,
+    "_note": "S0比 10%以上のlogloss改善（目安 0.360未満）は異常として実装を停止しevaluatorへ報告する"
+  },
+  "verdict": {
+    "_note": "主判定: loglossとcalibration_max_error_ppの両方でS0改善した系列のみ採用候補。片方のみは不採用。複数の場合はlogloss最小を採用。"
+  }
+}

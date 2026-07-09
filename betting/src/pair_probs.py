@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from prob_fusion.src.place_prob import stern_second_prob
+from prob_fusion.src.place_prob import stern_second_prob, stern_third_prob
 
 PAIR_KEY = tuple[int, int]
 
@@ -19,15 +19,29 @@ def stern_quinella_pair_prob(p_win: np.ndarray, i: int, j: int, lam2: float = 1.
 
 
 def stern_wide_pair_prob(p_win: np.ndarray, i: int, j: int, lam2: float, lam3: float) -> float:
-    """Wide (exacta or quinella-style top2) approximation via Stern."""
+    """Wide (both horses finish top-3, any order) probability via Stern.
+
+    top-3 は逐次モデル（1着~p_win, 2着~stern_second_prob, 3着~stern_third_prob）で
+    決まるため、i,j が top-3 に入る事象は次の6通りに分解できる:
+      (1) {i,j} が {1着,2着}（= quinella q）
+      (2) i=1着, k=2着, j=3着 / j=1着, k=2着, i=3着
+      (3) k=1着, i=2着, j=3着 / k=1着, j=2着, i=3着
+    旧実装は (2) の条件付き確率に stern_second_prob を誤用し (3) を欠落させていたため、
+    全ペア合計が理論値（4頭なら3.0）の約半分にしかならないバグがあった。
+    """
     q = stern_quinella_pair_prob(p_win, i, j, lam2)
     n = len(p_win)
+    second_i = stern_second_prob(p_win, i, lam2)
+    second_j = stern_second_prob(p_win, j, lam2)
     wide = q
     for k in range(n):
         if k == i or k == j:
             continue
-        wide += p_win[i] * stern_second_prob(p_win, i, lam2)[k] * stern_second_prob(p_win, k, lam3)[j]
-        wide += p_win[j] * stern_second_prob(p_win, j, lam2)[k] * stern_second_prob(p_win, k, lam3)[i]
+        second_k = stern_second_prob(p_win, k, lam2)
+        wide += p_win[i] * second_i[k] * stern_third_prob(p_win, i, k, lam3)[j]
+        wide += p_win[j] * second_j[k] * stern_third_prob(p_win, j, k, lam3)[i]
+        wide += p_win[k] * second_k[i] * stern_third_prob(p_win, k, i, lam3)[j]
+        wide += p_win[k] * second_k[j] * stern_third_prob(p_win, k, j, lam3)[i]
     return float(wide)
 
 

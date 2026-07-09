@@ -1,4 +1,4 @@
-"""Conditional logit fusion: p_i ∝ exp(α·z_i + β·ln q_i)."""
+"""Conditional logit fusion: p_i ∝ exp(α·z_i + β·ln q_i + γ·x_i)."""
 
 from __future__ import annotations
 
@@ -16,11 +16,35 @@ class FusionParams:
     beta: float
     nll: float
     success: bool
+    gamma: float = 0.0
 
 
-def fusion_probs(z: np.ndarray, ln_q: np.ndarray, alpha: float, beta: float) -> np.ndarray:
+RaceTuple = tuple[np.ndarray, np.ndarray, int] | tuple[np.ndarray, np.ndarray, np.ndarray, int]
+
+
+def _unpack_race(
+    race: RaceTuple,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, int]:
+    if len(race) == 3:
+        z, ln_q, winner_idx = race
+        return z, ln_q, None, winner_idx
+    z, ln_q, x, winner_idx = race
+    return z, ln_q, x, winner_idx
+
+
+def fusion_probs(
+    z: np.ndarray,
+    ln_q: np.ndarray,
+    alpha: float,
+    beta: float,
+    *,
+    x: np.ndarray | None = None,
+    gamma: float = 0.0,
+) -> np.ndarray:
     """Race-normalized fusion probabilities."""
     logits = alpha * z + beta * ln_q
+    if x is not None and gamma != 0.0:
+        logits = logits + gamma * x
     logits = logits - np.max(logits)
     exp_l = np.exp(logits)
     total = exp_l.sum()
@@ -30,26 +54,39 @@ def fusion_probs(z: np.ndarray, ln_q: np.ndarray, alpha: float, beta: float) -> 
     return exp_l / total
 
 
-def race_nll(params: np.ndarray, z: np.ndarray, ln_q: np.ndarray, winner_idx: int) -> float:
+def race_nll(
+    params: np.ndarray,
+    z: np.ndarray,
+    ln_q: np.ndarray,
+    winner_idx: int,
+    x: np.ndarray | None = None,
+) -> float:
     """Negative log-likelihood for one race."""
-    alpha, beta = params
-    p = fusion_probs(z, ln_q, alpha, beta)
+    alpha, beta = params[0], params[1]
+    gamma = params[2] if len(params) > 2 else 0.0
+    p = fusion_probs(z, ln_q, alpha, beta, x=x, gamma=gamma)
     p_w = float(p[winner_idx])
     return -np.log(max(p_w, 1e-15))
 
 
-def total_nll(params: np.ndarray, races: list[tuple[np.ndarray, np.ndarray, int]]) -> float:
-    return sum(race_nll(params, z, ln_q, w) for z, ln_q, w in races)
+def total_nll(params: np.ndarray, races: list[RaceTuple]) -> float:
+    total = 0.0
+    for race in races:
+        z, ln_q, x, winner_idx = _unpack_race(race)
+        total += race_nll(params, z, ln_q, winner_idx, x=x)
+    return total
 
 
 def fit_fusion_mle(
-    races: list[tuple[np.ndarray, np.ndarray, int]],
+    races: list[RaceTuple],
     *,
     alpha_bounds: tuple[float, float] = (0.0, 5.0),
     beta_bounds: tuple[float, float] = (0.0, 3.0),
+    gamma_bounds: tuple[float, float] = (0.0, 5.0),
     market_only: bool = False,
+    gamma_fixed_zero: bool = False,
 ) -> FusionParams:
-    """MLE for (α, β) on list of (z, ln_q, winner_index) per race."""
+    """MLE for (α, β, γ) on race tuples; γ is optional/backward compatible."""
     if market_only:
 
         def nll_beta(beta_arr: np.ndarray) -> float:
@@ -61,7 +98,24 @@ def fit_fusion_mle(
             bounds=[beta_bounds],
             method="L-BFGS-B",
         )
-        return FusionParams(alpha=0.0, beta=float(res.x[0]), nll=float(res.fun), success=bool(res.success))
+        return FusionParams(alpha=0.0, beta=float(res.x[0]), nll=float(res.fun), success=bool(res.success), gamma=0.0)
+
+    has_candidate = any(len(race) == 4 for race in races)
+    if has_candidate and not gamma_fixed_zero:
+        res = optimize.minimize(
+            total_nll,
+            x0=np.array([1.0, 1.0, 0.0]),
+            args=(races,),
+            bounds=[alpha_bounds, beta_bounds, gamma_bounds],
+            method="L-BFGS-B",
+        )
+        return FusionParams(
+            alpha=float(res.x[0]),
+            beta=float(res.x[1]),
+            gamma=float(res.x[2]),
+            nll=float(res.fun),
+            success=bool(res.success),
+        )
 
     res = optimize.minimize(
         total_nll,
@@ -75,11 +129,12 @@ def fit_fusion_mle(
         beta=float(res.x[1]),
         nll=float(res.fun),
         success=bool(res.success),
+        gamma=0.0,
     )
 
 
 def likelihood_ratio_test(
-    races: list[tuple[np.ndarray, np.ndarray, int]],
+    races: list[RaceTuple],
     fitted: FusionParams,
     *,
     alpha_bounds: tuple[float, float] = (0.0, 5.0),
@@ -98,7 +153,35 @@ def likelihood_ratio_test(
     }
 
 
-def build_race_tuples(df: pd.DataFrame) -> list[tuple[np.ndarray, np.ndarray, int]]:
+def gamma_likelihood_ratio_test(
+    races: list[RaceTuple],
+    fitted: FusionParams,
+    *,
+    alpha_bounds: tuple[float, float] = (0.0, 5.0),
+    beta_bounds: tuple[float, float] = (0.0, 3.0),
+    gamma_bounds: tuple[float, float] = (0.0, 5.0),
+) -> dict:
+    """LRT: H0 γ=0 with α,β free vs H1 γ free."""
+    h0 = fit_fusion_mle(
+        races,
+        alpha_bounds=alpha_bounds,
+        beta_bounds=beta_bounds,
+        gamma_bounds=gamma_bounds,
+        gamma_fixed_zero=True,
+    )
+    lr = 2.0 * (h0.nll - fitted.nll)
+    p_value = 1.0 - stats.chi2.cdf(lr, df=1) if lr > 0 else 1.0
+    return {
+        "h0_nll": h0.nll,
+        "h1_nll": fitted.nll,
+        "lr_statistic": lr,
+        "p_value": float(p_value),
+        "h0_alpha": h0.alpha,
+        "h0_beta": h0.beta,
+    }
+
+
+def build_race_tuples(df: pd.DataFrame, x_col: str | None = None) -> list[RaceTuple]:
     """Build (z, ln_q, winner_idx) list from scored dataframe."""
     races = []
     for _, grp in df.groupby("race_id"):
@@ -115,11 +198,22 @@ def build_race_tuples(df: pd.DataFrame) -> list[tuple[np.ndarray, np.ndarray, in
         ln_q = grp["ln_market_q"].astype(float).values
         if len(z) < 2:
             continue
-        races.append((z, ln_q, w_idx))
+        if x_col is not None:
+            x = grp[x_col].astype(float).values
+            races.append((z, ln_q, x, w_idx))
+        else:
+            races.append((z, ln_q, w_idx))
     return races
 
 
-def mean_logloss(df: pd.DataFrame, alpha: float, beta: float) -> float:
+def mean_logloss(
+    df: pd.DataFrame,
+    alpha: float,
+    beta: float,
+    *,
+    x_col: str | None = None,
+    gamma: float = 0.0,
+) -> float:
     """Mean -log p(winner) on dataframe with fusion inputs."""
     losses: list[float] = []
     for _, grp in df.groupby("race_id"):
@@ -128,7 +222,8 @@ def mean_logloss(df: pd.DataFrame, alpha: float, beta: float) -> float:
             continue
         z = grp["pure_score_z"].astype(float).values
         ln_q = grp["ln_market_q"].astype(float).values
-        p = fusion_probs(z, ln_q, alpha, beta)
+        x = grp[x_col].astype(float).values if x_col is not None else None
+        p = fusion_probs(z, ln_q, alpha, beta, x=x, gamma=gamma)
         w_pos = list(grp.index).index(winners.index[0])
         pw = float(p[w_pos])
         if pw > 1e-15:
@@ -136,7 +231,14 @@ def mean_logloss(df: pd.DataFrame, alpha: float, beta: float) -> float:
     return float(np.mean(losses)) if losses else float("nan")
 
 
-def top1_hit_rate(df: pd.DataFrame, alpha: float, beta: float) -> float:
+def top1_hit_rate(
+    df: pd.DataFrame,
+    alpha: float,
+    beta: float,
+    *,
+    x_col: str | None = None,
+    gamma: float = 0.0,
+) -> float:
     """Top-1 accuracy using fusion probabilities."""
     hits = 0
     total = 0
@@ -146,7 +248,8 @@ def top1_hit_rate(df: pd.DataFrame, alpha: float, beta: float) -> float:
             continue
         z = grp["pure_score_z"].astype(float).values
         ln_q = grp["ln_market_q"].astype(float).values
-        p = fusion_probs(z, ln_q, alpha, beta)
+        x = grp[x_col].astype(float).values if x_col is not None else None
+        p = fusion_probs(z, ln_q, alpha, beta, x=x, gamma=gamma)
         pred_idx = int(np.argmax(p))
         actual_idx = list(grp.index).index(winners.index[0])
         total += 1
@@ -155,14 +258,23 @@ def top1_hit_rate(df: pd.DataFrame, alpha: float, beta: float) -> float:
     return hits / total if total else 0.0
 
 
-def calibration_bins(df: pd.DataFrame, alpha: float, beta: float, n_bins: int = 10) -> dict:
+def calibration_bins(
+    df: pd.DataFrame,
+    alpha: float,
+    beta: float,
+    n_bins: int = 10,
+    *,
+    x_col: str | None = None,
+    gamma: float = 0.0,
+) -> dict:
     """10-bin calibration: max |predicted - actual|."""
     preds: list[float] = []
     outcomes: list[int] = []
     for _, grp in df.groupby("race_id"):
         z = grp["pure_score_z"].astype(float).values
         ln_q = grp["ln_market_q"].astype(float).values
-        p = fusion_probs(z, ln_q, alpha, beta)
+        x = grp[x_col].astype(float).values if x_col is not None else None
+        p = fusion_probs(z, ln_q, alpha, beta, x=x, gamma=gamma)
         finish = grp["finish_rank"].astype(int).values
         for i, prob in enumerate(p):
             preds.append(float(prob))

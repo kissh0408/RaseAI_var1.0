@@ -39,7 +39,7 @@ def _resolve_path(path: Path | str) -> Path:
 
 def _odds_from_se(se_path: Path) -> pd.DataFrame:
     """race_se.csv から race_id, horse_id, odds（decimal）を抽出。"""
-    from main.build_today_features import _make_race_id_vec
+    from main.race_id_utils import _make_race_id_vec
 
     se = pd.read_csv(se_path, dtype=str)
     for col in ["year", "month_day", "course_code", "kai", "nichi", "race_num", "horse_num"]:
@@ -277,7 +277,7 @@ def run_unified_today(
     odds_df = _odds_from_se(se)
     odds_ts = datetime.now(timezone.utc).isoformat()
     if odds_csv is not None:
-        from main.build_today_features import load_realtime_odds
+        from main.race_id_utils import load_realtime_odds
 
         rt = load_realtime_odds(_resolve_path(odds_csv))
         rt["race_id"] = rt["race_id"].astype(str)

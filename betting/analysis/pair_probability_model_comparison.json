@@ -1,0 +1,37 @@
+{
+  "protocol": {
+    "l1_scores": "fold2-only 5-seed ensemble OOS",
+    "test_period": "2025-01-01..",
+    "fusion_params_source": "evaluation\\reports\\fusion_oos_fold2.json",
+    "max_horses_per_race": 18
+  },
+  "n_races_used": 4775,
+  "n_races_skipped": 0,
+  "n_pairs": 443125,
+  "wide": {
+    "stern": {
+      "logloss": 0.10961079320327755,
+      "calibration_max_error_pp": 8.346685501108054,
+      "mean_pred": 0.03232722143864598
+    },
+    "harville": {
+      "logloss": 0.11025177239512035,
+      "calibration_max_error_pp": 13.547448368147851,
+      "mean_pred": 0.032327221438645984
+    },
+    "actual_rate": 0.032435543018335684
+  },
+  "quinella": {
+    "stern": {
+      "logloss": 0.04602338215803013,
+      "calibration_max_error_pp": 28.647473066052775,
+      "mean_pred": 0.01077574047954866
+    },
+    "harville": {
+      "logloss": 0.04595802751449848,
+      "calibration_max_error_pp": 16.011204308339057,
+      "mean_pred": 0.010775740479548662
+    },
+    "actual_rate": 0.010838928067700987
+  }
+}
