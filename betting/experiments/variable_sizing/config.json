@@ -1,0 +1,101 @@
+{
+  "_comment": "variable_sizing 実験専用 config。仕様書 docs/specs/2026-07-11-variable-sizing-spec.md の値を収納する受け皿。後出し変更禁止（f_var のみ Stage V1 実行後に凍結追記する）。",
+  "score_col": "pure_score_z",
+  "data_sources": {
+    "scores_path": "pure_rank/data/03_scores/scores_v39_course_slim_fold2_oos.parquet",
+    "features_path": "pure_rank/data/02_features/features_v39_course_slim.parquet"
+  },
+  "odds_filter": {
+    "min_odds": 2.0,
+    "max_odds": 50.0
+  },
+  "boundaries": {
+    "status": "reused_frozen_from_confidence_tiers",
+    "b1": 0.11895233392715454,
+    "b2": 0.28122442960739136,
+    "b3": 0.5161097198724747,
+    "source": "betting/experiments/confidence_tiers/config.json::boundaries (docs/specs/2026-07-11-confidence-tiers-spec.md §13, frozen 2026-07-11)",
+    "note": "本Phaseでは新たな境界導出は行わない（仕様書§2）。"
+  },
+  "multipliers": {
+    "status": "frozen_pre_registered",
+    "m1": 0.5,
+    "m2": 0.75,
+    "m3": 1.25,
+    "m4": 1.5,
+    "tier_labels": [
+      "T1",
+      "T2",
+      "T3",
+      "T4"
+    ],
+    "note": "1を中心に等間隔対称 m_t=1+d*(2t-5)/2, d=0.25（仕様書§3.1）。着順・払戻・ROI・Δを一切参照せず設計制約のみから決定。ROI最適化には使わない（§0.5）。"
+  },
+  "stake_rounding_yen": 100,
+  "min_base_stake_multiple": 4,
+  "min_base_stake_multiple_note": "base_stake は stake_rounding_yen の4倍(=400円)の倍数でなければならない（仕様書§3.3）。倍率{0.5,0.75,1.25,1.5}が丸め誤差ゼロで100円単位に乗るための必要条件。",
+  "budget_preservation": {
+    "tolerance_low": 0.95,
+    "tolerance_high": 1.05,
+    "note": "占有率加重平均倍率 M̄ = Σ w_t*m_t が [0.95,1.05] に入ることを保存則とする（仕様書§3.2-1）。不成立ならplannerへ差し戻し、倍率調整はしない。"
+  },
+  "bankroll_anchor": 400000,
+  "bankroll_anchor_note": "f0=0.001 における base_stake=400円の基準bankroll。f_var<0.001が採用された場合は min_bankroll_variable(f_var)=4*stake_rounding_yen/f_var を用いる（仕様書§3.3。f_var=0.0005なら800,000円）。",
+  "f_var": {
+    "status": "frozen_2026-07-11",
+    "grid": [
+      0.001,
+      0.0005,
+      0.00025
+    ],
+    "f0_for_scaling": 0.001,
+    "safety_factor_k": 0.5,
+    "monthly_mdd_limit": 0.15,
+    "note": "Stage V1（run_v1_risk_valid.py）実行後にこのブロックへ f_scale/f_capped/adopted_f_var を凍結追記する（仕様書§4 Stage V1、下方拡張のみ・上方拡張禁止）。",
+    "f_scale": 0.0018738288569643974,
+    "f_capped": 0.0009369144284821987,
+    "adopted_f_var": 0.0005,
+    "adopted_bankroll": 800000.0,
+    "worst_month_dd_var_at_f0": 0.08005,
+    "frozen_note": "run_v1_risk_valid.py により VALID(2024)実測から機械的に導出・凍結（下方拡張のみ）。以後変更禁止。TEST(2025+)は本導出に一切使用していない。出典: betting\\experiments\\variable_sizing\\results\\risk_valid.json"
+  },
+  "max_daily_exposure": 0.25,
+  "busiest_day_exposure_headroom_limit": 0.125,
+  "protocol": {
+    "valid_period": {
+      "start": "2024-01-01",
+      "end": "2024-12-31"
+    },
+    "test_period": {
+      "start": "2025-01-01",
+      "end": null
+    },
+    "test_period_note": "Stage V3 (evaluator承認後の別タスク)。本実装(implementer §10タスク1-8)はTEST行を一切読まない。",
+    "period_source_ref": "prob_fusion/src/oos_protocol.py::TEST_START"
+  },
+  "reproduction_anchors": {
+    "valid_2024": {
+      "source": "evaluation/reports/flat_fraction_valid_2024.json",
+      "n_bets": 2608,
+      "hit_rate": 0.24233128834355827,
+      "roi_pct": 79.0989263803681,
+      "tolerance_pp": 0.1,
+      "tolerance_n": 0
+    },
+    "test_2025": {
+      "source": "evaluation/reports/betting_backtest_oos_flat.json",
+      "n_bets": 3758,
+      "roi_model_pct": 83.34752527940394,
+      "roi_fav_pct": 78.35122488301678,
+      "tolerance_pp": 0.1,
+      "tolerance_n": 0,
+      "usage_note": "Stage V3専用のアンカー。本実装ではV3を実行しないため使用しない。"
+    }
+  },
+  "danger_thresholds": {
+    "leak_review_top1_rate": 0.4,
+    "roi_danger_ratio": 1.0
+  },
+  "disclaimer_source": "betting/experiments/variable_sizing/sizing_lib.py::DISCLAIMER (docs/specs/2026-07-11-variable-sizing-spec.md §4.4)",
+  "exclusion_filters_note": "grade_code/abnormal_code/horse_count/finish_rankの除外はload_scored_odds_frameが読むfeatures_v39_course_slim.parquet生成時点で既に適用済み（本実験では再適用しない）"
+}

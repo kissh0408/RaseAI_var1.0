@@ -589,6 +589,48 @@ for _i in range(1, 154):
     O3_SCHEMA[f"wide_odds_{_i:03d}_max"] = (_start + 9, 5)
     O3_SCHEMA[f"wide_odds_{_i:03d}_pop"] = (_start + 14, 3)
 
+# O1（単複枠オッズ）: docs/JV-Data.md「7. オッズ1（単複枠）（O1）」と照合。
+# 0B31（速報オッズ・単複枠）と 0B41（時系列オッズ・単複枠）は同一レイアウトの
+# O1 レコードを使う（違いはサーバ側の配信挙動のみ）。
+# 2026-07-12: 時系列オッズ(0B41/0B42)フェッチャ実装のため追加
+# （common.data.src.jv_schemas.O1_SCHEMA と同一定義。このモジュールは
+# jv_schemas.py を import せず独自の SCHEMAS を持つため、両方に定義する）。
+O1_SCHEMA = {
+    "record_id": (1, 2),
+    "data_kubun": (3, 1),
+    "date_make": (4, 8),
+    "year": (12, 4),
+    "month_day": (16, 4),
+    "course_code": (20, 2),
+    "kai": (22, 2),
+    "nichi": (24, 2),
+    "race_num": (26, 2),
+    "announce_datetime": (28, 8),  # 月日時分各2桁。時系列オッズ使用時のみキー
+    "registered_count": (36, 2),
+    "running_count": (38, 2),
+    "sale_flag_win": (40, 1),
+    "sale_flag_place": (41, 1),
+    "sale_flag_bracket_quinella": (42, 1),
+    "place_payout_key": (43, 1),
+    "win_vote_count": (928, 11),
+    "place_vote_count": (939, 11),
+    "bracket_quinella_vote_count": (950, 11),
+    "record_separator": (961, 2),
+}
+
+for _i in range(1, 29):
+    _start = 44 + (_i - 1) * 8
+    O1_SCHEMA[f"win_odds_{_i:02d}_horse"] = (_start, 2)
+    O1_SCHEMA[f"win_odds_{_i:02d}_odds"] = (_start + 2, 4)
+    O1_SCHEMA[f"win_odds_{_i:02d}_pop"] = (_start + 6, 2)
+
+for _i in range(1, 29):
+    _start = 268 + (_i - 1) * 12
+    O1_SCHEMA[f"place_odds_{_i:02d}_horse"] = (_start, 2)
+    O1_SCHEMA[f"place_odds_{_i:02d}_min"] = (_start + 2, 4)
+    O1_SCHEMA[f"place_odds_{_i:02d}_max"] = (_start + 6, 4)
+    O1_SCHEMA[f"place_odds_{_i:02d}_pop"] = (_start + 10, 2)
+
 
 SCHEMAS = {
     "RA": RA_SCHEMA,
@@ -607,6 +649,7 @@ SCHEMAS = {
     "JC": JC_SCHEMA,
     "TC": TC_SCHEMA,
     "CC": CC_SCHEMA,
+    "O1": O1_SCHEMA,
     "O2": O2_SCHEMA,
     "O3": O3_SCHEMA,
 }
@@ -5657,6 +5700,102 @@ def _parse_o3_wide_odds(raw_line: str, race_id: str) -> list[dict]:
     return rows
 
 
+def _parse_o1_win_place_odds_ts(raw_line: str, race_id: str) -> list[dict]:
+    """
+    速報/時系列オッズ O1 から単勝・複勝オッズを馬番1行へ展開する。
+
+    0B31（速報・単複枠）と 0B41（時系列・単複枠）はどちらも O1 フォーマットを
+    使うため、このパーサーは両方の取得経路で共用できる。時系列取得(0B41)では
+    announce_datetime（発表月日時分）がレコードごとに異なる値を持ち、
+    同一レース内の複数時刻分のオッズを区別するキーとなる。
+    """
+    if not raw_line or not raw_line.startswith("O1") or "O1" not in SCHEMAS:
+        return []
+    parsed = parse_fixed_width(raw_line.encode("cp932", "replace"), SCHEMAS["O1"])
+    base = _base_odds_record_fields(parsed, race_id)
+    base["sale_flag_win"] = str(parsed.get("sale_flag_win", ""))
+    base["sale_flag_place"] = str(parsed.get("sale_flag_place", ""))
+
+    place_by_horse: dict[str, dict] = {}
+    for i in range(1, 29):
+        h = str(parsed.get(f"place_odds_{i:02d}_horse", "")).strip()
+        if not h.isdigit() or h == "00":
+            continue
+        min_raw = str(parsed.get(f"place_odds_{i:02d}_min", ""))
+        max_raw = str(parsed.get(f"place_odds_{i:02d}_max", ""))
+        min_odds, min_status = _parse_odds_tenth(min_raw, width=4)
+        max_odds, max_status = _parse_odds_tenth(max_raw, width=4)
+        place_by_horse[h.zfill(2)] = {
+            "place_odds_min_raw": min_raw,
+            "place_odds_max_raw": max_raw,
+            "place_odds_min": min_odds,
+            "place_odds_max": max_odds,
+            "place_odds_status": (
+                min_status if min_status == max_status else f"{min_status}/{max_status}"
+            ),
+            "place_popularity_raw": str(parsed.get(f"place_odds_{i:02d}_pop", "")),
+        }
+
+    rows = []
+    for i in range(1, 29):
+        h = str(parsed.get(f"win_odds_{i:02d}_horse", "")).strip()
+        if not h.isdigit() or h == "00":
+            continue
+        horse_num = h.zfill(2)
+        odds_raw = str(parsed.get(f"win_odds_{i:02d}_odds", ""))
+        odds, status = _parse_odds_tenth(odds_raw, width=4)
+        pop_raw = str(parsed.get(f"win_odds_{i:02d}_pop", ""))
+        place = place_by_horse.get(horse_num, {})
+        rows.append(
+            {
+                **base,
+                "record_id": "O1",
+                "horse_num": horse_num,
+                "win_odds_raw": odds_raw,
+                "win_odds": odds,
+                "win_odds_status": status,
+                "win_popularity_raw": pop_raw,
+                "place_odds_min_raw": place.get("place_odds_min_raw", ""),
+                "place_odds_max_raw": place.get("place_odds_max_raw", ""),
+                "place_odds_min": place.get("place_odds_min"),
+                "place_odds_max": place.get("place_odds_max"),
+                "place_odds_status": place.get("place_odds_status", ""),
+                "place_popularity_raw": place.get("place_popularity_raw", ""),
+            }
+        )
+    return rows
+
+
+WIN_PLACE_ODDS_TS_FIELDS = [
+    "year",
+    "month_day",
+    "course_code",
+    "kai",
+    "nichi",
+    "race_num",
+    "race_id",
+    "record_id",
+    "horse_num",
+    "win_odds_raw",
+    "win_odds",
+    "win_odds_status",
+    "win_popularity_raw",
+    "place_odds_min_raw",
+    "place_odds_max_raw",
+    "place_odds_min",
+    "place_odds_max",
+    "place_odds_status",
+    "place_popularity_raw",
+    "data_kubun",
+    "date_make",
+    "announce_datetime",
+    "sale_flag_win",
+    "sale_flag_place",
+    "registered_count",
+    "running_count",
+]
+
+
 QUINELLA_ODDS_FIELDS = [
     "year",
     "month_day",
@@ -6371,6 +6510,441 @@ def fetch_pairwide_odds_0b31_yearly(
             quinella_path=_quinella_odds_path(year),
             wide_path=_wide_odds_path(year),
             append=not overwrite,
+        )
+    return results
+
+
+# ─── 時系列オッズ（0B41 単複枠 / 0B42 馬連） ────────────────────────────────
+#
+# 保持期間が1年間しかない（docs/JV-Data.md 2438-2439行）ため、他のオッズ取得
+# より優先して蓄積を開始する。レコードフォーマットは 0B31(O1)/0B32(O2) と同一
+# だが、サーバ側の配信仕様が異なる: 0B31/0B32 は最新スナップショットのみだが
+# 0B41/0B42 はレース発売開始〜締切までの複数時点のオッズを announce_datetime
+# 違いのレコードとして連続配信する。そのため取得ロジック自体は
+# _fetch_pairwide_odds_0b31_for_race_ids() とほぼ同じ（JVRTOpen→JVRead ループ）
+# だが、dataspec を "0B41"/"0B42" にし、O1/O2 の両方を1レースにつき1回の
+# JVRTOpen で取得する点が異なる（0B41で単複枠、0B42で馬連を別々に開く）。
+#
+# 市場情報境界: ここでは JV-Link からの取得・保存のみを行う。L1(pure_rank)の
+# 特徴量には絶対に組み込まない（CLAUDE.md 憲法 第1条）。
+
+
+def _odds_ts_output_dir() -> Path:
+    return Path(__file__).parent.parent.parent / "data" / "output" / "odds_ts"
+
+
+def _win_place_odds_ts_path(year: int | str) -> Path:
+    return _odds_ts_output_dir() / f"WinPlaceOddsTS_{int(year)}.csv"
+
+
+def _quinella_odds_ts_path(year: int | str) -> Path:
+    return _odds_ts_output_dir() / f"QuinellaOddsTS_{int(year)}.csv"
+
+
+def _load_existing_win_place_ts_keys(path: Path) -> set:
+    keys = set()
+    if not path.exists():
+        return keys
+    try:
+        with open(path, "r", encoding="utf-8-sig", newline="") as f:
+            for row in csv.DictReader(f):
+                keys.add(
+                    (
+                        row.get("race_id", ""),
+                        row.get("horse_num", ""),
+                        row.get("data_kubun", ""),
+                        row.get("announce_datetime", ""),
+                    )
+                )
+    except Exception:
+        pass
+    return keys
+
+
+def _load_completed_race_ids_ts(path: Path) -> set:
+    """時系列オッズCSVから、既に(1行以上)出力済みの race_id 集合だけを読み込む。
+
+    行データそのものは保持せず race_id (16桁文字列) だけを集合に残すため、
+    ファイルが何百万行あってもメモリ使用量はレース数(高々数千件)に比例する。
+
+    用途: 過去に開催が終わったレースの一括バックフィル(fetch_odds_ts_yearly)。
+    開催済みレースはこの先オッズスナップショットが増えることはないため、
+    「race_id が1度でも出力されていれば完了とみなして丸ごとスキップする」
+    チェックポイント方式が安全に成立する。
+    """
+    ids: set = set()
+    if not path.exists():
+        return ids
+    try:
+        with open(path, "r", encoding="utf-8-sig", newline="") as f:
+            for row in csv.DictReader(f):
+                rid = row.get("race_id", "")
+                if rid:
+                    ids.add(rid)
+    except Exception:
+        pass
+    return ids
+
+
+def _load_race_ts_row_keys_for_batch(
+    path: Path, race_ids: set, key_fields: tuple
+) -> dict:
+    """既存の時系列オッズCSVを1回スキャンし、今回処理するバッチの race_id に
+    該当する行だけの重複排除キーを保持する（該当しない行は捨てるため、
+    ファイル全体のサイズに関わらずメモリは「バッチ分のレース×行数」に収まる）。
+
+    用途: 開催前後で新しいオッズスナップショットが追加され続ける「今週分」の
+    ライブレース（fetch_odds_ts_0b41_0b42_for_main_races）。このケースでは
+    race_id 単位で丸ごとスキップすると新規スナップショットを取りこぼすため、
+    行レベルの重複排除が必要になる。
+    """
+    keys: dict = {rid: set() for rid in race_ids}
+    if not path.exists():
+        return keys
+    try:
+        with open(path, "r", encoding="utf-8-sig", newline="") as f:
+            for row in csv.DictReader(f):
+                rid = row.get("race_id", "")
+                bucket = keys.get(rid)
+                if bucket is None:
+                    continue
+                bucket.add(tuple(row.get(k, "") for k in key_fields))
+    except Exception:
+        pass
+    return keys
+
+
+# レース数単位でのflush間隔。年間3000+レースを一度にメモリへ溜め込むと
+# (実測: 馬連だけで1レースあたり約12,400行 → 年間4,000万行超) 32bitプロセスの
+# メモリ上限(2〜4GB程度)を超えて MemoryError になるため、この件数ごとに
+# 逐次ディスクへ書き出してリストをクリアする。
+_ODDS_TS_CHUNK_SIZE = 50
+
+
+def _fetch_odds_ts_for_race_ids(
+    race_ids: list[str],
+    *,
+    win_place_path: Path,
+    quinella_path: Path,
+    append: bool = True,
+    mode: str = "checkpoint",
+    chunk_size: int = _ODDS_TS_CHUNK_SIZE,
+) -> dict:
+    """指定レースID群について 0B41(O1時系列)/0B42(O2時系列) を取得し保存する。
+
+    chunk_size レースごとに逐次ディスクへflushし、行データのリストは都度
+    クリアする（年間3000+レースを一度にメモリへ溜め込む設計は MemoryError の
+    原因になるため廃止した）。途中で例外(MemoryError含む)が発生しても、
+    それまでにflush済みの分はディスクに残る。
+
+    mode="checkpoint" (デフォルト。fetch_odds_ts_yearly の過去データ一括取得向け):
+        出力CSVに race_id が1行でも存在すれば「完了済み」とみなし、
+        JVRTOpen 自体を呼ばずに丸ごとスキップする。開催済みレースはこの先
+        スナップショットが増えないため安全。既存CSVからは race_id の集合だけを
+        読み込む(行データは保持しない → メモリはレース数に比例、行数には非依存)。
+
+    mode="dedupe" (fetch_odds_ts_0b41_0b42_for_main_races の週次差分取得向け):
+        開催前のレースは今後もオッズスナップショットが追加され続けるため
+        race_id 単位でスキップしてはいけない。今回のバッチに含まれる race_id
+        だけに絞って既存の行キーを読み込み(全期間ではなくバッチ分のみなので
+        軽量)、行レベルで重複を除去する。
+    """
+    win_place_path.parent.mkdir(parents=True, exist_ok=True)
+    quinella_path.parent.mkdir(parents=True, exist_ok=True)
+
+    batch_wp_keys: dict | None = None
+    batch_q_keys: dict | None = None
+    skipped = 0
+
+    if mode == "checkpoint" and append:
+        done_wp = _load_completed_race_ids_ts(win_place_path)
+        done_q = _load_completed_race_ids_ts(quinella_path)
+        # 両方のCSVに存在して初めて「完了済み」とみなす(安全側)。前回の
+        # 途中クラッシュで片方しか書けていない場合は再取得の対象に残す。
+        done_ids = done_wp & done_q
+        pending_ids = [rid for rid in race_ids if rid not in done_ids]
+        skipped = len(race_ids) - len(pending_ids)
+        race_ids = pending_ids
+    elif mode == "dedupe" and append:
+        race_id_set = set(race_ids)
+        batch_wp_keys = _load_race_ts_row_keys_for_batch(
+            win_place_path,
+            race_id_set,
+            ("race_id", "horse_num", "data_kubun", "announce_datetime"),
+        )
+        batch_q_keys = _load_race_ts_row_keys_for_batch(
+            quinella_path,
+            race_id_set,
+            ("race_id", "ticket", "data_kubun", "announce_datetime"),
+        )
+
+    if skipped:
+        print(f"  [odds_ts] Skipping {skipped} already-fetched races (checkpoint)")
+
+    total_races = len(race_ids)
+    processed = 0
+    total_wp_added = 0
+    total_q_added = 0
+    start_time = time.time()
+
+    wp_rows: list[dict] = []
+    q_rows: list[dict] = []
+    # ファイルへの最初の書き込みだけ呼び出し元の append 指定(True/False)に従い、
+    # 以降のflushは常に append=True にする。append=False(overwrite)の場合、
+    # 2回目以降も append=False のまま save_to_csv を呼ぶと直前のchunkを
+    # 上書き消去してしまうため。
+    wp_first_write_pending = True
+    q_first_write_pending = True
+
+    def _flush() -> None:
+        nonlocal wp_rows, q_rows, total_wp_added, total_q_added
+        nonlocal wp_first_write_pending, q_first_write_pending
+        if wp_rows:
+            use_append = append if wp_first_write_pending else True
+            save_to_csv(wp_rows, str(win_place_path), WIN_PLACE_ODDS_TS_FIELDS, append=use_append)
+            wp_first_write_pending = False
+            total_wp_added += len(wp_rows)
+        if q_rows:
+            use_append = append if q_first_write_pending else True
+            save_to_csv(q_rows, str(quinella_path), QUINELLA_ODDS_FIELDS, append=use_append)
+            q_first_write_pending = False
+            total_q_added += len(q_rows)
+        wp_rows = []
+        q_rows = []
+
+    client = None
+    try:
+        client = JRAVANClient()
+        client.login()
+        chunk_count = 0
+        for race_id in race_ids:
+            # レース単位の一時的な重複排除セット。バッチ内で既存キーが
+            # わかっている(mode="dedupe")場合はそれを初期値にする。
+            # レース終了後はこのローカル set 自体が破棄されるため、
+            # 全期間分のキーを保持し続けることはない。
+            race_wp_seen = set(batch_wp_keys.get(race_id, ())) if batch_wp_keys is not None else set()
+            race_q_seen = set(batch_q_keys.get(race_id, ())) if batch_q_keys is not None else set()
+
+            for dataspec, target_rec_id in (("0B41", "O1"), ("0B42", "O2")):
+                try:
+                    rt_ret = client.jv_link.JVRTOpen(dataspec, race_id)
+                    rc = _jv_com_return_code(rt_ret)
+                except Exception as e:
+                    print(f"JVRTOpen({dataspec}, {race_id}) exception: {e}")
+                    continue
+                if rc < 0:
+                    # 1年経過後のレースや未発売時間帯は -111/-303/-202 等で
+                    # graceful skip する（fetch_odds_0b31系と同じ扱い）。
+                    continue
+
+                while True:
+                    rr = client.jv_link.JVRead("", 512000, "")
+                    if isinstance(rr, tuple):
+                        st = int(rr[0])
+                        raw = rr[1] if len(rr) > 1 else ""
+                    else:
+                        st = int(rr)
+                        raw = ""
+
+                    if st == 0:
+                        break
+                    if st == -1:
+                        continue
+                    if st == -3:
+                        time.sleep(0.2)
+                        continue
+                    if st < -1:
+                        break
+
+                    if isinstance(raw, bytes):
+                        try:
+                            raw = raw.decode("cp932", "replace")
+                        except Exception:
+                            raw = ""
+                    if not isinstance(raw, str) or not raw:
+                        continue
+
+                    for line in raw.split("\n"):
+                        line = line.strip("\r\n")
+                        if target_rec_id == "O1" and line.startswith("O1"):
+                            for row in _parse_o1_win_place_odds_ts(line, race_id):
+                                key = (
+                                    row["race_id"],
+                                    row["horse_num"],
+                                    row["data_kubun"],
+                                    row["announce_datetime"],
+                                )
+                                if key in race_wp_seen:
+                                    continue
+                                race_wp_seen.add(key)
+                                wp_rows.append(row)
+                        elif target_rec_id == "O2" and line.startswith("O2"):
+                            for row in _parse_o2_quinella_odds(line, race_id):
+                                key = (
+                                    row["race_id"],
+                                    row["ticket"],
+                                    row["data_kubun"],
+                                    row["announce_datetime"],
+                                )
+                                if key in race_q_seen:
+                                    continue
+                                race_q_seen.add(key)
+                                q_rows.append(row)
+
+                # 次のレースの JVRTOpen が正しく動作するようにセッションを閉じる
+                try:
+                    client.jv_link.JVClose()
+                except Exception:
+                    pass
+
+            processed += 1
+            chunk_count += 1
+            if chunk_count >= chunk_size:
+                _flush()
+                chunk_count = 0
+                elapsed = time.time() - start_time
+                print(
+                    f"  [odds_ts] {processed}/{total_races} races processed "
+                    f"({elapsed:.1f}s elapsed)"
+                )
+    finally:
+        # MemoryError等の例外でループが中断しても、ここまで溜まった分は
+        # flushしてからクライアントを閉じる(途中経過をディスクに残すため)。
+        _flush()
+        if client:
+            client.close()
+
+    if total_wp_added == 0:
+        print(f"No new O1 time-series (0B41) records found: {win_place_path.name}")
+    if total_q_added == 0:
+        print(f"No new O2 time-series (0B42) records found: {quinella_path.name}")
+
+    return {
+        "win_place": {"path": str(win_place_path), "added": total_wp_added},
+        "quinella": {"path": str(quinella_path), "added": total_q_added},
+        "races": total_races,
+        "processed": processed,
+        "skipped": skipped,
+    }
+
+
+def fetch_odds_ts_0b41_0b42_for_main_races(
+    start_date_str: str | None = None,
+    end_date_str: str | None = None,
+    *,
+    output_dir: str | None = None,
+) -> dict:
+    """
+    週次差分取得: main/data/race/race_ra.csv のレースID単位で 0B41/0B42 を
+    JVRTOpen し、時系列オッズ（単複枠・馬連）を蓄積する。
+
+    保存先:
+      common/data/output/odds_ts/WinPlaceOddsTS_{year}.csv
+      common/data/output/odds_ts/QuinellaOddsTS_{year}.csv
+    （announce_datetime が異なるレコードは別行として追記されるため、
+     スナップショット上書きではなく append=True で運用する）
+    """
+    start_date_str, end_date_str = _normalize_datetime_range(
+        start_date_str, end_date_str
+    )
+    start_yyyymmdd = start_date_str[:8]
+    end_yyyymmdd = end_date_str[:8]
+
+    project_root = Path(__file__).parent.parent.parent.parent
+    main_race_dir = (
+        Path(output_dir) if output_dir else (project_root / "main" / "data" / "race")
+    )
+    ra_path = main_race_dir / "race_ra.csv"
+    if not ra_path.exists():
+        print(f"race_ra.csv not found: {ra_path}")
+        return {
+            "win_place": {"path": "", "added": 0},
+            "quinella": {"path": "", "added": 0},
+            "races": 0,
+        }
+
+    with open(ra_path, "r", encoding="utf-8-sig", newline="") as f:
+        ra_rows = list(csv.DictReader(f))
+
+    race_ids = _load_race_ids_from_ra_rows(
+        ra_rows,
+        start_yyyymmdd=start_yyyymmdd,
+        end_yyyymmdd=end_yyyymmdd,
+    )
+
+    # 時系列データは year 単位で分割保存する。対象レースIDが複数年に
+    # またがることは通常ないが、開催年で束ねて安全に扱う。
+    by_year: dict[str, list[str]] = {}
+    for rid in race_ids:
+        by_year.setdefault(rid[:4], []).append(rid)
+
+    total = {
+        "win_place": {"added": 0},
+        "quinella": {"added": 0},
+        "races": len(race_ids),
+        "years": {},
+    }
+    for year, ids in sorted(by_year.items()):
+        res = _fetch_odds_ts_for_race_ids(
+            ids,
+            win_place_path=_win_place_odds_ts_path(year),
+            quinella_path=_quinella_odds_ts_path(year),
+            append=True,
+            # 週次差分取得の対象は開催前後の「今週分」レース。開催前は
+            # スナップショットが今後も増え続けるため race_id 単位で
+            # スキップしてはいけない(checkpointモードは使わない)。
+            mode="dedupe",
+        )
+        total["win_place"]["added"] += res["win_place"]["added"]
+        total["quinella"]["added"] += res["quinella"]["added"]
+        total["years"][year] = res
+    return total
+
+
+def fetch_odds_ts_yearly(
+    start_year: int = 2015,
+    end_year: int | None = None,
+    *,
+    source_output_dir: str | None = None,
+    overwrite: bool = False,
+) -> dict:
+    """
+    初回一括取得: common/data/output/race_ra/race_ra_YYYY.csv からレースIDを
+    作り、0B41/0B42 を年別CSVとして保存する。
+
+    保持期間が1年間しかないため、start_year を過去に広げても直近1年より前の
+    レースは JVRTOpen が負のリターンコードを返して graceful skip される
+    （added=0 になるだけでエラーにはしない）。実運用では
+    start_year=当年（or前年12月頃から）で十分。
+
+    保存先:
+      common/data/output/odds_ts/WinPlaceOddsTS_YYYY.csv
+      common/data/output/odds_ts/QuinellaOddsTS_YYYY.csv
+    """
+    if end_year is None:
+        end_year = datetime.now().year
+    results = {}
+    for year in range(int(start_year), int(end_year) + 1):
+        race_ids = _load_year_race_ids_for_odds(
+            year,
+            source_output_dir=source_output_dir,
+        )
+        if not race_ids:
+            results[year] = {
+                "win_place": {"path": str(_win_place_odds_ts_path(year)), "added": 0},
+                "quinella": {"path": str(_quinella_odds_ts_path(year)), "added": 0},
+                "races": 0,
+            }
+            continue
+        results[year] = _fetch_odds_ts_for_race_ids(
+            race_ids,
+            win_place_path=_win_place_odds_ts_path(year),
+            quinella_path=_quinella_odds_ts_path(year),
+            append=not overwrite,
+            # 一括バックフィル対象は既に開催が終わったレース。開催済みなら
+            # オッズスナップショットが増えることはないため、race_id 単位の
+            # チェックポイントで丸ごとスキップして良い(メモリ・時間とも大幅節約)。
+            mode="checkpoint",
         )
     return results
 

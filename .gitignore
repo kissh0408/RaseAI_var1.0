@@ -82,3 +82,22 @@ logs/
 
 # Temporary work files
 pure_rank/work/
+
+# experiments/ 生成物（大容量バイナリ、コードのみ追跡。結果はreportsのjson/mdで保持）
+*/experiments/*/data/
+*/experiments/*/models/
+*/experiments/*/scores/
+*/experiments/**/*.parquet
+*/experiments/*/reports/train_log.txt
+
+# LLM学習成果物・ログ（大容量）
+common/llm/models/
+common/llm/data/
+common/llm/*.txt
+
+# テストキャッシュ
+tests/cache/
+
+# その他生成物
+main/data/
+pure_rank/data/02_features/exported_scores/

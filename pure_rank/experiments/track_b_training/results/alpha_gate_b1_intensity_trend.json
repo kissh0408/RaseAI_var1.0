@@ -1,0 +1,53 @@
+{
+  "candidate": "b1_intensity_trend",
+  "fit_period": "2023",
+  "eval_period": "2024",
+  "fit_n_races": 3394,
+  "eval_n_races": 3392,
+  "alpha": 0.0,
+  "beta": 1.024123423045936,
+  "gamma": 0.008984796195201152,
+  "fit_nll_h1": 6526.518994309678,
+  "fit_nll_h0_gamma0": 6526.6128151189,
+  "gamma_lrt_statistic": 0.1876416184422851,
+  "gamma_lrt_p": 0.6648867693613327,
+  "eval_logloss_h1": 1.8752896180905585,
+  "eval_logloss_h0_gamma0": 1.8752118471515837,
+  "delta_ll_per_race": -7.777093897476384e-05,
+  "eval_top1": 0.3475825471698113,
+  "top1_floor": 0.2999,
+  "leak_warnings": {
+    "fit": {
+      "finish_rank_abs_corr": 0.00200722836080001,
+      "market_abs_corr": 0.003237817472418565,
+      "pure_score_abs_corr": 0.00023453709097461927,
+      "corr_stop_threshold": 0.7,
+      "leak_warning": false
+    },
+    "eval": {
+      "finish_rank_abs_corr": 0.005276096493063832,
+      "market_abs_corr": 0.0027150168693612377,
+      "pure_score_abs_corr": 0.0034193151302033824,
+      "corr_stop_threshold": 0.7,
+      "leak_warning": false
+    },
+    "leak_warning": false
+  },
+  "gates": {
+    "gamma_lrt_p_lt_0_01": false,
+    "delta_ll_per_race_positive": false,
+    "top1_regression_ok": true,
+    "leak_warning_clear": true
+  },
+  "pass": false,
+  "used_test_2025_plus": false,
+  "eval_spearman": 0.5539839854112926,
+  "leak_stop": false,
+  "leak_stop_reasons": {
+    "spearman_gt_0_60": false,
+    "top1_gt_0_40": false,
+    "corr_leak_warning": false
+  },
+  "primary_pass": false,
+  "generated_at": "2026-07-09T18:22:15.668018+00:00"
+}

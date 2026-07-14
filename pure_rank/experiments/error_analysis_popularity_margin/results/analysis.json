@@ -1,0 +1,81 @@
+{
+  "protocol": {
+    "test_period": "2025-01-01..",
+    "score_col": "pure_score_z",
+    "n_races": 4775,
+    "n_rows": 66020,
+    "popularity_definition": "odds昇順のレース内順位（診断専用の評価派生列。学習・特徴量には未使用）",
+    "note": "本診断は評価レイヤー限定でオッズ由来の人気を使用する（CLAUDE.md Rule 1は特徴量投入の禁止であり事後診断は対象外。evaluation/market_baseline.pyのfavorite baseline測定と同じ扱い）。"
+  },
+  "diagnostic_1_popularity_breakdown": [
+    {
+      "popularity_bucket": "1",
+      "n_horses": 4775,
+      "base_rate_top3_actual": 0.6578010471204189,
+      "n_top3_actual": 3141,
+      "model_top3_catch_rate": 0.9375994906080866,
+      "n_win_actual": 1571,
+      "model_win_catch_rate_pred_rank1": 0.7110120942075111,
+      "avg_model_pred_rank": 1.6557068062827225
+    },
+    {
+      "popularity_bucket": "2",
+      "n_horses": 4775,
+      "base_rate_top3_actual": 0.5352879581151833,
+      "n_top3_actual": 2556,
+      "model_top3_catch_rate": 0.8051643192488263,
+      "n_win_actual": 989,
+      "model_win_catch_rate_pred_rank1": 0.21638018200202225,
+      "avg_model_pred_rank": 2.6661780104712043
+    },
+    {
+      "popularity_bucket": "3",
+      "n_horses": 4775,
+      "base_rate_top3_actual": 0.41047120418848165,
+      "n_top3_actual": 1960,
+      "model_top3_catch_rate": 0.601530612244898,
+      "n_win_actual": 608,
+      "model_win_catch_rate_pred_rank1": 0.09868421052631579,
+      "avg_model_pred_rank": 3.686910994764398
+    },
+    {
+      "popularity_bucket": "4",
+      "n_horses": 4775,
+      "base_rate_top3_actual": 0.33654450261780106,
+      "n_top3_actual": 1607,
+      "model_top3_catch_rate": 0.358431860609832,
+      "n_win_actual": 405,
+      "model_win_catch_rate_pred_rank1": 0.06666666666666667,
+      "avg_model_pred_rank": 4.511832460732984
+    },
+    {
+      "popularity_bucket": "5+",
+      "n_horses": 46920,
+      "base_rate_top3_actual": 0.10820545609548167,
+      "n_top3_actual": 5077,
+      "model_top3_catch_rate": 0.09040772109513492,
+      "n_win_actual": 1209,
+      "model_win_catch_rate_pred_rank1": 0.011579818031430935,
+      "avg_model_pred_rank": 9.577131287297528
+    }
+  ],
+  "diagnostic_2_margin_breakdown": {
+    "n_pred_top1_total": 4775,
+    "n_hits": 1432,
+    "n_misses": 3343,
+    "top1_rate": 0.2998952879581152,
+    "n_misses_finished_2nd": 928,
+    "second_place_miss_time_diff_distribution": {
+      "<=0.1s": 190,
+      "0.1-0.2s": 163,
+      "0.2-0.3s": 108,
+      "0.3-0.5s": 158,
+      "0.5-1.0s": 83,
+      ">1.0s": 20
+    },
+    "nose_miss_rate_le_0.1s_of_2nd_misses": 0.4267241379310345,
+    "narrow_miss_rate_le_0.3s_of_2nd_misses": 0.71875,
+    "nose_miss_rate_le_0.1s_of_all_misses": 0.118456476218965,
+    "narrow_miss_rate_le_0.3s_of_all_misses": 0.19952138797487287
+  }
+}

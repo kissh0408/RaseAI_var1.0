@@ -1,0 +1,290 @@
+{
+  "stage": "stage1_counts",
+  "cutoff": "2024-12-31",
+  "n_units_min": 300,
+  "sum_p_theo_min": 30,
+  "segments": [
+    {
+      "bet_type": "place",
+      "pop_band": "POP1",
+      "fs_band": "FS_S",
+      "n_units": 400,
+      "n_races": 400,
+      "sum_p_theo": 302.5892091135578,
+      "confirmed": true
+    },
+    {
+      "bet_type": "place",
+      "pop_band": "POP1",
+      "fs_band": "FS_M",
+      "n_units": 2364,
+      "n_races": 2364,
+      "sum_p_theo": 1690.9910606295061,
+      "confirmed": true
+    },
+    {
+      "bet_type": "place",
+      "pop_band": "POP1",
+      "fs_band": "FS_L",
+      "n_units": 4022,
+      "n_races": 4022,
+      "sum_p_theo": 2530.791073752514,
+      "confirmed": true
+    },
+    {
+      "bet_type": "place",
+      "pop_band": "POP2",
+      "fs_band": "FS_S",
+      "n_units": 800,
+      "n_races": 400,
+      "sum_p_theo": 402.06410741404227,
+      "confirmed": true
+    },
+    {
+      "bet_type": "place",
+      "pop_band": "POP2",
+      "fs_band": "FS_M",
+      "n_units": 4728,
+      "n_races": 2364,
+      "sum_p_theo": 2308.642080413637,
+      "confirmed": true
+    },
+    {
+      "bet_type": "place",
+      "pop_band": "POP2",
+      "fs_band": "FS_L",
+      "n_units": 8044,
+      "n_races": 4022,
+      "sum_p_theo": 3400.851990226109,
+      "confirmed": true
+    },
+    {
+      "bet_type": "place",
+      "pop_band": "POP3",
+      "fs_band": "FS_S",
+      "n_units": 1175,
+      "n_races": 400,
+      "sum_p_theo": 265.63717623690394,
+      "confirmed": true
+    },
+    {
+      "bet_type": "place",
+      "pop_band": "POP3",
+      "fs_band": "FS_M",
+      "n_units": 7092,
+      "n_races": 2364,
+      "sum_p_theo": 1922.606211939209,
+      "confirmed": true
+    },
+    {
+      "bet_type": "place",
+      "pop_band": "POP3",
+      "fs_band": "FS_L",
+      "n_units": 12066,
+      "n_races": 4022,
+      "sum_p_theo": 3000.4188305004977,
+      "confirmed": true
+    },
+    {
+      "bet_type": "place",
+      "pop_band": "POP4",
+      "fs_band": "FS_S",
+      "n_units": 539,
+      "n_races": 334,
+      "sum_p_theo": 49.70950723549595,
+      "confirmed": true
+    },
+    {
+      "bet_type": "place",
+      "pop_band": "POP4",
+      "fs_band": "FS_M",
+      "n_units": 12194,
+      "n_races": 2363,
+      "sum_p_theo": 1169.760647017648,
+      "confirmed": true
+    },
+    {
+      "bet_type": "place",
+      "pop_band": "POP4",
+      "fs_band": "FS_L",
+      "n_units": 38736,
+      "n_races": 4022,
+      "sum_p_theo": 3133.9381055208796,
+      "confirmed": true
+    },
+    {
+      "bet_type": "wide",
+      "pop_band": "PAIR_TOP",
+      "fs_band": "FS_S",
+      "n_units": 561,
+      "n_races": 187,
+      "sum_p_theo": 209.33045373944475,
+      "confirmed": true
+    },
+    {
+      "bet_type": "wide",
+      "pop_band": "PAIR_TOP",
+      "fs_band": "FS_M",
+      "n_units": 6780,
+      "n_races": 2260,
+      "sum_p_theo": 1850.2389333263723,
+      "confirmed": true
+    },
+    {
+      "bet_type": "wide",
+      "pop_band": "PAIR_TOP",
+      "fs_band": "FS_L",
+      "n_units": 11937,
+      "n_races": 3979,
+      "sum_p_theo": 2433.092174935411,
+      "confirmed": true
+    },
+    {
+      "bet_type": "wide",
+      "pop_band": "PAIR_MIX",
+      "fs_band": "FS_S",
+      "n_units": 2769,
+      "n_races": 187,
+      "sum_p_theo": 303.8459591785394,
+      "confirmed": true
+    },
+    {
+      "bet_type": "wide",
+      "pop_band": "PAIR_MIX",
+      "fs_band": "FS_M",
+      "n_units": 55563,
+      "n_races": 2260,
+      "sum_p_theo": 3874.51133629188,
+      "confirmed": true
+    },
+    {
+      "bet_type": "wide",
+      "pop_band": "PAIR_MIX",
+      "fs_band": "FS_L",
+      "n_units": 150774,
+      "n_races": 3979,
+      "sum_p_theo": 6834.290939248651,
+      "confirmed": true
+    },
+    {
+      "bet_type": "wide",
+      "pop_band": "PAIR_LONG",
+      "fs_band": "FS_S",
+      "n_units": 1823,
+      "n_races": 187,
+      "sum_p_theo": 47.82358708201587,
+      "confirmed": true
+    },
+    {
+      "bet_type": "wide",
+      "pop_band": "PAIR_LONG",
+      "fs_band": "FS_M",
+      "n_units": 68760,
+      "n_races": 2260,
+      "sum_p_theo": 1055.2497303817474,
+      "confirmed": true
+    },
+    {
+      "bet_type": "wide",
+      "pop_band": "PAIR_LONG",
+      "fs_band": "FS_L",
+      "n_units": 294934,
+      "n_races": 3979,
+      "sum_p_theo": 2669.6168858159385,
+      "confirmed": true
+    },
+    {
+      "bet_type": "quinella",
+      "pop_band": "PAIR_TOP",
+      "fs_band": "FS_S",
+      "n_units": 660,
+      "n_races": 220,
+      "sum_p_theo": 119.34439000433623,
+      "confirmed": true
+    },
+    {
+      "bet_type": "quinella",
+      "pop_band": "PAIR_TOP",
+      "fs_band": "FS_M",
+      "n_units": 7092,
+      "n_races": 2364,
+      "sum_p_theo": 982.9390209507255,
+      "confirmed": true
+    },
+    {
+      "bet_type": "quinella",
+      "pop_band": "PAIR_TOP",
+      "fs_band": "FS_L",
+      "n_units": 12066,
+      "n_races": 4022,
+      "sum_p_theo": 1314.980195600456,
+      "confirmed": true
+    },
+    {
+      "bet_type": "quinella",
+      "pop_band": "PAIR_MIX",
+      "fs_band": "FS_S",
+      "n_units": 3249,
+      "n_races": 220,
+      "sum_p_theo": 92.61908281768814,
+      "confirmed": true
+    },
+    {
+      "bet_type": "quinella",
+      "pop_band": "PAIR_MIX",
+      "fs_band": "FS_M",
+      "n_units": 57858,
+      "n_races": 2364,
+      "sum_p_theo": 1184.956916024335,
+      "confirmed": true
+    },
+    {
+      "bet_type": "quinella",
+      "pop_band": "PAIR_MIX",
+      "fs_band": "FS_L",
+      "n_units": 152406,
+      "n_races": 4022,
+      "sum_p_theo": 2179.509763171224,
+      "confirmed": true
+    },
+    {
+      "bet_type": "quinella",
+      "pop_band": "PAIR_LONG",
+      "fs_band": "FS_S",
+      "n_units": 2134,
+      "n_races": 220,
+      "sum_p_theo": 8.036527177975625,
+      "confirmed": false
+    },
+    {
+      "bet_type": "quinella",
+      "pop_band": "PAIR_LONG",
+      "fs_band": "FS_M",
+      "n_units": 71300,
+      "n_races": 2364,
+      "sum_p_theo": 196.10406302493942,
+      "confirmed": true
+    },
+    {
+      "bet_type": "quinella",
+      "pop_band": "PAIR_LONG",
+      "fs_band": "FS_L",
+      "n_units": 298119,
+      "n_races": 4022,
+      "sum_p_theo": 527.5100412283199,
+      "confirmed": true
+    }
+  ],
+  "K": 29,
+  "K_max": 30,
+  "bonferroni_threshold": 0.0003448275862068966,
+  "excluded_segments": [
+    {
+      "bet_type": "quinella",
+      "pop_band": "PAIR_LONG",
+      "fs_band": "FS_S",
+      "n_units": 2134,
+      "sum_p_theo": 8.036527177975625
+    }
+  ]
+}

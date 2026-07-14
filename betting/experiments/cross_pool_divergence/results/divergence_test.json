@@ -1,0 +1,39 @@
+{
+  "stage": "divergence_test",
+  "executed_once": true,
+  "segment": {
+    "bet_type": "place",
+    "pop_band": "POP1",
+    "fs_band": "FS_L"
+  },
+  "test_period": "2025-01-01..",
+  "n_units": 3022,
+  "n_races": 3022,
+  "n_hits": 1892,
+  "h": 0.6260754467240238,
+  "p_bar_theo": 0.6276531026701393,
+  "d_cal": -0.0015776559461154749,
+  "o_bar_hit": 1.3545983086680762,
+  "roi_flat": 0.8480807412309729,
+  "d_adj": 0.03549446424324032,
+  "d_adj_threshold": 0.03,
+  "secondary_pass": true,
+  "gates": {
+    "top1_payout_share": 0.0010534940887276132,
+    "payout_not_concentrated_top1_lte_30pct": true,
+    "n_hits_gte_10": true,
+    "diagnosis_valid": true
+  },
+  "protocol": {
+    "q_method": "proportional",
+    "lam_source": "evaluation/reports/fusion_oos_fold2.json",
+    "lam2": 0.6017839448116524,
+    "lam3": 0.6381161426667171,
+    "t_place": 0.2
+  },
+  "interpretation_fixed_in_advance": "TEST通過でも結論は『較正乖離の頑健性確認』であり、ROI_flat≈86%水準（fit実測）で収益化不可は確定済み。D_adj>0 は複勝プールの POP1 過小評価が控除率の壁の内側に留まることと両立する。",
+  "caveats": [
+    "確定払戻は事前オッズではない。購入時点で乖離が消えている可能性は残る（上限診断）。",
+    "複勝 D_adj は Ō_hit セグメントレベル近似（調和平均とのバイアスあり）。"
+  ]
+}

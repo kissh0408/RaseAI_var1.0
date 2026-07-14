@@ -1,0 +1,81 @@
+{
+  "_comment": "confidence_tiers 実験専用 config。仕様書 docs/specs/2026-07-11-confidence-tiers-spec.md の値を収納する受け皿。後出し変更禁止。boundaries は Stage 1 実行後に凍結追記する（本ファイルの他フィールドと違い、Stage 1 完了後は変更禁止）。",
+  "score_col": "pure_score_z",
+  "data_sources": {
+    "scores_path": "pure_rank/data/03_scores/scores_v39_course_slim_fold2_oos.parquet",
+    "features_path": "pure_rank/data/02_features/features_v39_course_slim.parquet"
+  },
+  "odds_filter": {
+    "min_odds": 2.0,
+    "max_odds": 50.0
+  },
+  "bankroll": 100000.0,
+  "stake_fraction": 0.001,
+  "stake_rounding_yen": 100,
+  "tiers": {
+    "k": 4,
+    "labels": ["T1", "T2", "T3", "T4"],
+    "note": "T1=margin最小(低自信)...T4=margin最大(高自信)"
+  },
+  "protocol": {
+    "stage1_boundary_period": {"start": "2023-01-01", "end": "2023-12-31"},
+    "stage2_valid_period": {"start": "2024-01-01", "end": "2024-12-31"},
+    "stage3_test_period": {"start": "2025-01-01", "end": null},
+    "period_source_ref": "prob_fusion/src/oos_protocol.py::TEST_START"
+  },
+  "min_sample": {
+    "n_min": 200,
+    "note": "VALID(2024)各階層n>=200。未満は当該階層判定保留、H_ordも実行しない"
+  },
+  "bootstrap": {
+    "B": 10000,
+    "seed": 42,
+    "method": "cluster_race_id_percentile_one_sided",
+    "pattern_source": "betting/experiments/cross_pool_divergence/divergence_lib.py::cluster_bootstrap_p_value（片側化して再利用）"
+  },
+  "hypotheses": {
+    "k_hyp": 5,
+    "note_k_hyp": "H1,H2,H3,H4,H_ord",
+    "bonferroni_alpha": 0.01,
+    "bonferroni_threshold": 0.002,
+    "note_threshold": "n<200による保留が発生しても0.002のまま固定（実効仮説数を減らして緩めない）"
+  },
+  "danger_thresholds": {
+    "leak_review_top1_rate": 0.40,
+    "roi_danger_ratio": 1.0,
+    "large_delta_abs": 0.20
+  },
+  "payout_concentration_gate": {
+    "top1_payout_share_max": 0.30,
+    "n_hits_min": 10,
+    "pattern_source": "betting/experiments/cross_pool_divergence/divergence_lib.py::payout_concentration_gate"
+  },
+  "reproduction_anchors": {
+    "valid_2024": {
+      "source": "evaluation/reports/flat_fraction_valid_2024.json",
+      "n_bets": 2608,
+      "hit_rate": 0.24233128834355827,
+      "roi_pct": 79.0989263803681,
+      "tolerance_pp": 0.1,
+      "tolerance_n": 0
+    },
+    "test_2025": {
+      "source": "evaluation/reports/betting_backtest_oos_flat.json",
+      "n_bets": 3758,
+      "roi_model_pct": 83.34752527940394,
+      "roi_fav_pct": 78.35122488301678,
+      "tolerance_pp": 0.1,
+      "tolerance_n": 0
+    }
+  },
+  "boundaries": {
+    "status": "frozen_2026-07-11",
+    "b1": 0.11895233392715454,
+    "b2": 0.28122442960739136,
+    "b3": 0.5161097198724747,
+    "n_2023": 2714,
+    "frozen_note": "2026-07-11 に docs/specs/2026-07-11-confidence-tiers-spec.md §13 へ追記・凍結済み（出典: results/stage1_boundaries.json）。以後変更禁止。"
+  },
+  "disclaimer_source": "betting/src/flat_top1.py::DISCLAIMER",
+  "exclusion_filters_note": "grade_code/abnormal_code/horse_count/finish_rankの除外はload_scored_odds_frameが読むfeatures_v39_course_slim.parquet生成時点で既に適用済み（本実験では再適用しない）"
+}

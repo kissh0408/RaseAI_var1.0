@@ -185,15 +185,30 @@ def _load_data(cfg: dict) -> pd.DataFrame:
     #   セクション2 候補4・セクション6
     n_before_region = len(df)
     src_se_path = resolve_project_path(cfg["data"]["src_parquet_dir"]) / "SE_preprocessed.parquet"
-    src_se = pd.read_parquet(src_se_path, columns=["race_id", "ketto_num", "region_code"])
-    src_se["race_id"] = src_se["race_id"].astype(str)
-    src_se["ketto_num"] = src_se["ketto_num"].astype(str)
-    df["ketto_num"] = df["ketto_num"].astype(str)
-    df = df.merge(src_se, on=["race_id", "ketto_num"], how="left")
-    assert len(df) == n_before_region, (
-        f"region_code マージで行数が変化しています（ファンアウト検出）: "
-        f"{n_before_region:,} → {len(df):,}"
-    )
+    import pyarrow.parquet as _pq
+
+    src_se_has_region = src_se_path.exists() and "region_code" in _pq.read_schema(src_se_path).names
+    # region_code は元々 var2.0.0 の軽量 SE_preprocessed.parquet から補完する想定だったが
+    # (コメント参照)、cfg["data"]["src_parquet_dir"] が pure_rank 自身の
+    # 01_preprocessed を指す運用（L4 復旧確認, 2026-07-10）では region_code 列が
+    # 存在しない。存在しない場合は NaN 埋めにフォールバックする
+    # （_transport_category は未知組み合わせを NaN とする設計のため安全に劣化する）。
+    if src_se_has_region:
+        src_se = pd.read_parquet(src_se_path, columns=["race_id", "ketto_num", "region_code"])
+        src_se["race_id"] = src_se["race_id"].astype(str)
+        src_se["ketto_num"] = src_se["ketto_num"].astype(str)
+        df["ketto_num"] = df["ketto_num"].astype(str)
+        df = df.merge(src_se, on=["race_id", "ketto_num"], how="left")
+        assert len(df) == n_before_region, (
+            f"region_code マージで行数が変化しています（ファンアウト検出）: "
+            f"{n_before_region:,} → {len(df):,}"
+        )
+    else:
+        print(
+            f"  [warn] region_code が {src_se_path} に存在しません。"
+            f"transport_category は NaN にフォールバックします（L4復旧確認, 2026-07-10）。"
+        )
+        df["region_code"] = pd.NA
 
     print(f"  Merged: {len(df):,} rows, {len(df.columns)} cols")
     return df
@@ -925,6 +940,105 @@ def _build_post_position_x_small(df: pd.DataFrame) -> pd.DataFrame:
     print(f"  post_position_x_small: NaN率 {col.isna().mean():.1%}, "
           f"mean {col.mean():+.5f}, std {col.std():.5f}, "
           f"nonzero {(col != 0).sum():,} rows")
+    return df
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SECTION 5.79: CUSHION / MOISTURE FEATURES (v51_cushion, Phase A)
+# JRAが当日朝に発表するクッション値・含水率。当該レースの結果情報ではなく
+# レース前確定の馬場情報であり、市場情報でもないため L1 特徴量として適合する。
+# 仕様書: docs/specs/2026-07-12-alpha-recovery-data-expansion-spec.md Phase A
+# データ: common/data/output/cushion/cushion_all.csv（2018〜2025、12,792行）
+# ═══════════════════════════════════════════════════════════════════════════════
+
+CUSHION_TRACK_AVG_WINDOW_DAYS: int = 365   # A3: 過去1年平均のウィンドウ
+
+
+def _load_cushion_daily(cfg: dict) -> pd.DataFrame:
+    """cushion_all.csv を読み込み、race_date×course_code×surface_code 単位に集約する。
+
+    measure_point_code（同一馬場の複数測定点。ほぼ全レコードで1レースあたり2点）は
+    単純平均で当日値に集約する。クッション値は JRA 仕様上、芝のみに設定される
+    （ダートは常時 NaN）。2020-09 以前はクッション値自体が未整備で NaN。
+    """
+    path = resolve_project_path(cfg["data"]["cushion_dir"]) / "cushion_all.csv"
+    raw = pd.read_csv(path)
+    raw["race_date"] = pd.to_datetime(raw["race_date"].astype(str), format="%Y%m%d")
+
+    day = (
+        raw.groupby(["race_date", "course_code", "surface_code"], observed=True)
+        .agg(cushion_value=("cushion_value", "mean"), moisture_pct=("moisture_pct", "mean"))
+        .reset_index()
+    )
+    print(f"  cushion_all.csv: {len(raw):,} rows -> {len(day):,} "
+          f"(race_date x course_code x surface_code) cells")
+    return day
+
+
+def _build_cushion_features(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """クッション値・含水率特徴量（A1〜A3, A6, v51_cushion 専用）を生成する。
+
+    A1 cushion_value / A2 moisture_pct: 当日発表値をそのままマージ（shift不要。
+        当該レースの結果情報ではなく、レース前に確定している馬場情報のため）。
+    A3 cushion_diff_track_avg: 当日値 − 当該場・当該surfaceの過去1年平均（当日除く）。
+    A6 last3f_rank_x_cushion: 当該馬の過去走上がり3F順位（shift(1)+expanding平均）×
+        当日クッション値。
+
+    A4 hist_perf_similar_cushion / A5 hist_perf_similar_moisture は相関ゲート不合格
+    （既存 hist_place_rate と r=0.75/0.73、帯フィルタが広すぎて実質同一情報）のため
+    2026-07-12 に削除。詳細: docs/specs/2026-07-12-alpha-recovery-data-expansion-spec.md
+    """
+    cushion_day = _load_cushion_daily(cfg)
+
+    n_before = len(df)
+    df = df.merge(
+        cushion_day, on=["race_date", "course_code", "surface_code"], how="left"
+    )
+    assert len(df) == n_before, (
+        f"cushion マージで行数が変化しています（ファンアウト検出）: "
+        f"{n_before:,} -> {len(df):,}"
+    )
+    print(f"  A1 cushion_value: 非欠損率 {df['cushion_value'].notna().mean():.2%} "
+          f"(surface_code=2(ダート)・2020-09以前はNaN想定)")
+    print(f"  A2 moisture_pct: 非欠損率 {df['moisture_pct'].notna().mean():.2%}")
+
+    # ─── A3: cushion_diff_track_avg ────────────────────────────────────────
+    track_idx = (
+        cushion_day.sort_values(["course_code", "surface_code", "race_date"])
+        .set_index("race_date")
+    )
+    track_roll = (
+        track_idx.groupby(["course_code", "surface_code"], observed=True)["cushion_value"]
+        .rolling(f"{CUSHION_TRACK_AVG_WINDOW_DAYS}D", closed="left")
+        .mean()
+        .reset_index()
+        .rename(columns={"cushion_value": "_track_avg_cushion"})
+    )
+    df = df.merge(
+        track_roll, on=["course_code", "surface_code", "race_date"], how="left"
+    )
+    df["cushion_diff_track_avg"] = df["cushion_value"] - df["_track_avg_cushion"]
+    df = df.drop(columns=["_track_avg_cushion"])
+    col = df["cushion_diff_track_avg"]
+    print(f"  A3 cushion_diff_track_avg: NaN率 {col.isna().mean():.1%}, "
+          f"mean {col.mean():+.4f}, std {col.std():.4f}")
+
+    # ─── A6: last3f_rank_x_cushion ──────────────────────────────────────────
+    # 上がり3F順位はレース内順位（1=最速）。当該レースの結果情報だが shift(1) で
+    # 過去走のみを参照するため当該レースは含まれない。
+    df = df.sort_values(["ketto_num", "race_date"]).reset_index(drop=True)
+    df["_agari_rank"] = df.groupby("race_id")["time_3f_after"].rank(
+        method="min", ascending=True
+    )
+    df["_hist_agari_rank_avg"] = df.groupby("ketto_num")["_agari_rank"].transform(
+        lambda x: x.shift(1).expanding().mean()
+    )
+    df["last3f_rank_x_cushion"] = df["_hist_agari_rank_avg"] * df["cushion_value"]
+    df = df.drop(columns=["_agari_rank", "_hist_agari_rank_avg"])
+    col = df["last3f_rank_x_cushion"]
+    print(f"  A6 last3f_rank_x_cushion: NaN率 {col.isna().mean():.1%}, "
+          f"mean {col.mean():+.4f}, std {col.std():.4f}")
+
     return df
 
 
@@ -1912,6 +2026,12 @@ NEW_FEATURE_COLS_BY_VERSION: dict[str, list[str]] = {
         "trn_hc_basediff_best",
         "trn_hc_accel_best",
     ],
+    "v51_cushion": [
+        "cushion_value",
+        "moisture_pct",
+        "cushion_diff_track_avg",
+        "last3f_rank_x_cushion",
+    ],
 }
 
 CORR_GATE_THRESHOLD: float = 0.7      # |r| >= 0.7 → 学習に進まず planner へ報告
@@ -2119,6 +2239,10 @@ def main() -> None:
     if version == "v46_small_pool":
         print("\n[5.76] Building small course pool win rate (v46_small_pool)...")
         df = _build_small_course_pool_features(df)
+
+    if version == "v51_cushion":
+        print("\n[5.79] Building cushion/moisture features (v51_cushion)...")
+        df = _build_cushion_features(df, cfg)
 
     print("\n[6] Building training features (HC/WC)...")
     hc = _load_hc(cfg)
@@ -2358,6 +2482,15 @@ def main() -> None:
             assert col in df.columns, f"{col} がありません"
         assert "course_is_small" not in df.columns, "中間変数 course_is_small が残っています"
         print(f"\n[8.3] Column count assert PASS: {len(df.columns)} == 135")
+    elif version == "v51_cushion":
+        assert len(df.columns) == 136, (
+            f"v51_cushion は 136 列（v39_course_slim の 132 + 新規4列）のはずですが "
+            f"{len(df.columns)} 列あります: 差分を確認してください"
+        )
+        for col in NEW_FEATURE_COLS_BY_VERSION["v51_cushion"]:
+            assert col in df.columns, f"{col} がありません"
+        assert "course_is_small" not in df.columns, "中間変数 course_is_small が残っています"
+        print(f"\n[8.3] Column count assert PASS: {len(df.columns)} == 136")
 
     # 保存前に行順序を LambdaRank グループ割り当て用に修正する。
     # 中間処理では ketto_num 順（shift(1) 効率化）を使うが、

@@ -1,0 +1,109 @@
+{
+  "candidates": {
+    "b1": {
+      "id": "B-1",
+      "name": "b1_intensity_trend",
+      "gamma": 0.008984796195201152,
+      "gamma_lrt_p": 0.6648867693613327,
+      "delta_ll_per_race": -7.777093897476384e-05,
+      "eval_top1": 0.3475825471698113,
+      "eval_spearman": 0.5539839854112926,
+      "leak_stop": false,
+      "primary_pass": false,
+      "gates": {
+        "gamma_lrt_p_lt_0_01": false,
+        "delta_ll_per_race_positive": false,
+        "top1_regression_ok": true,
+        "leak_warning_clear": true
+      },
+      "generated_at": "2026-07-09T18:22:15.668018+00:00"
+    },
+    "b2": {
+      "id": "B-2",
+      "name": "b2_freq_change",
+      "gamma": 0.04125355788520938,
+      "gamma_lrt_p": 0.06394526610920792,
+      "delta_ll_per_race": -0.0006654387304916298,
+      "eval_top1": 0.345813679245283,
+      "eval_spearman": 0.553908015467375,
+      "leak_stop": false,
+      "primary_pass": false,
+      "gates": {
+        "gamma_lrt_p_lt_0_01": false,
+        "delta_ll_per_race_positive": false,
+        "top1_regression_ok": true,
+        "leak_warning_clear": true
+      },
+      "generated_at": "2026-07-09T18:23:29.946678+00:00"
+    },
+    "b3": {
+      "id": "B-3",
+      "name": "b3_accel_profile",
+      "gamma": 0.04178662920201796,
+      "gamma_lrt_p": 0.034222500941369915,
+      "delta_ll_per_race": -0.0004980913987404634,
+      "eval_top1": 0.3446344339622642,
+      "eval_spearman": 0.5537324554428694,
+      "leak_stop": false,
+      "primary_pass": false,
+      "gates": {
+        "gamma_lrt_p_lt_0_01": false,
+        "delta_ll_per_race_positive": false,
+        "top1_regression_ok": true,
+        "leak_warning_clear": true
+      },
+      "generated_at": "2026-07-09T18:25:16.808371+00:00"
+    },
+    "b4": {
+      "id": "B-4",
+      "name": "b4_fade_trend",
+      "gamma": 0.0,
+      "gamma_lrt_p": 1.0,
+      "delta_ll_per_race": 7.729556994462428e-10,
+      "eval_top1": 0.34846698113207547,
+      "eval_spearman": 0.5539911390645011,
+      "leak_stop": false,
+      "primary_pass": false,
+      "gates": {
+        "gamma_lrt_p_lt_0_01": false,
+        "delta_ll_per_race_positive": true,
+        "top1_regression_ok": true,
+        "leak_warning_clear": true
+      },
+      "generated_at": "2026-07-09T18:27:34.730471+00:00"
+    },
+    "b5": {
+      "id": "B-5",
+      "name": "b5_wc_switch",
+      "gamma": 0.0,
+      "gamma_lrt_p": 0.9999971528905289,
+      "delta_ll_per_race": 1.961493190094643e-10,
+      "eval_top1": 0.34846698113207547,
+      "eval_spearman": 0.5539911390645011,
+      "leak_stop": false,
+      "primary_pass": false,
+      "gates": {
+        "gamma_lrt_p_lt_0_01": false,
+        "delta_ll_per_race_positive": true,
+        "top1_regression_ok": true,
+        "leak_warning_clear": true
+      },
+      "generated_at": "2026-07-09T18:29:00.035448+00:00"
+    }
+  },
+  "verdict": "training_data_no_market_signal_at_current_granularity",
+  "candidates_completed": [
+    "b1",
+    "b2",
+    "b3",
+    "b4",
+    "b5"
+  ],
+  "candidates_total": [
+    "b1",
+    "b2",
+    "b3",
+    "b4",
+    "b5"
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "protocol": {
+    "stage": "stage_v0_occupancy",
+    "period": "2024-01-01..2024-12-31",
+    "outcome_blind": true,
+    "outcome_blind_note": "本スクリプトは finish_rank/odds/payout/ROI/的中率を一切読み込まず・計算せず・出力しない（読み込み列は race_id/race_date/tier のみ）。",
+    "source_dataset": "betting\\experiments\\variable_sizing\\data\\bets_dataset.parquet",
+    "multipliers": {
+      "m1": 0.5,
+      "m2": 0.75,
+      "m3": 1.25,
+      "m4": 1.5
+    },
+    "boundaries_source": "betting/experiments/confidence_tiers/config.json::boundaries (docs/specs/2026-07-11-confidence-tiers-spec.md §13, frozen 2026-07-11)"
+  },
+  "n_bets_valid": 2608,
+  "n_races_valid": 2608,
+  "tier_counts": {
+    "1": 666,
+    "2": 677,
+    "3": 641,
+    "4": 624
+  },
+  "tier_occupancy": {
+    "1": 0.2553680981595092,
+    "2": 0.2595858895705521,
+    "3": 0.24578220858895705,
+    "4": 0.2392638036809816
+  },
+  "weighted_mean_multiplier": 0.9884969325153374,
+  "budget_tolerance": [
+    0.95,
+    1.05
+  ],
+  "budget_preserved": true,
+  "next_step": "budget_preserved=true の場合のみ Stage V1（run_v1_risk_valid.py）へ進む。false の場合は倍率を調整せず planner へ差し戻す（仕様書§3.2-1）。",
+  "caveats": [
+    "先行検証（confidence-tiers §15、verdict=confidence_does_not_predict_market_edge）で margin（自信度）は対1番人気ROI優位を予測しないことが統計的に確定している（H1〜H4・順序仮説すべて p>=0.24、Bonferroni閾値0.002を大きく上回る）。",
+    "自信度が高い階層ほどモデル予測1位が1番人気と一致する割合が上昇する（T1:37.4%→T4:74.2%、平均オッズも4.64倍→3.26倍と単調低下）。自信度で重み付けすると、モデルの数少ない優位性の源泉（過剰人気馬回避）を薄めるリスクがある。",
+    "本測定は階層占有率のみを扱うoutcome-blindな統計処理であり、着順・払戻・ROI・的中率は本ステージで一切計算・出力していない。"
+  ],
+  "disclaimer": "本可変サイジングはユーザーの設計選好（自信度に応じたリスク配分）の実装であり、ROI改善を目的・根拠としない。先行検証（docs/specs/2026-07-11-confidence-tiers-spec.md §15、verdict=confidence_does_not_predict_market_edge）で自信度は対1番人気ROI優位を予測しないことが確定しており、自信度加重はモデルの優位性の源泉（過剰人気馬回避）を薄めるリスクが記述的に示唆されている。本推奨は市場に対する相対的な損失最小化の枠内の配分変更であり、黒字化を保証するものではない（fold2 OOS実測: ROI 81.89%、元本の約18%の期待損失）"
+}

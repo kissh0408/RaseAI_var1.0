@@ -1,0 +1,36 @@
+{
+  "stage": "stage1_counts",
+  "cutoff": "2024-12-31",
+  "fit_year": 2023,
+  "eval_year": 2024,
+  "n_min_eval_2024": 300,
+  "segments": {
+    "S1": {
+      "n_2023": 307,
+      "n_2024": 311,
+      "confirmed": true
+    },
+    "S2": {
+      "n_2023": 180,
+      "n_2024": 220,
+      "confirmed": false
+    },
+    "S3": {
+      "n_2023": 538,
+      "n_2024": 336,
+      "confirmed": true
+    },
+    "S4": {
+      "n_2023": 1506,
+      "n_2024": 1516,
+      "confirmed": true
+    },
+    "S5": {
+      "n_2023": 2162,
+      "n_2024": 2163,
+      "confirmed": true
+    }
+  },
+  "K": 4,
+  "bonferroni_threshold": 0.0025
+}

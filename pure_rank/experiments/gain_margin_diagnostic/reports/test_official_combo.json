@@ -1,0 +1,23 @@
+{
+  "variant": "gain_margin_combo_test_official",
+  "official_baseline_v39": {
+    "top1_rate": 0.3024,
+    "top3_rate": 0.6176,
+    "ndcg_at_3": 0.5359,
+    "spearman": 0.5048
+  },
+  "combo_metrics": {
+    "top1_rate": 0.30031413612565444,
+    "top3_rate": 0.6159162303664921,
+    "ndcg_at_3": 0.5357973205269574,
+    "spearman": 0.5086530219336413,
+    "n_races": 4775,
+    "n_samples": 66020
+  },
+  "delta": {
+    "top1_rate": -0.0020858638743455615,
+    "top3_rate": -0.0016837696335079144,
+    "ndcg_at_3": -0.00010267947304265501,
+    "spearman": 0.003853021933641232
+  }
+}

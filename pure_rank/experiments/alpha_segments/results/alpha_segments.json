@@ -1,0 +1,72 @@
+{
+  "stage": "stage2_lrt",
+  "fit_year": 2023,
+  "eval_year": 2024,
+  "K": 4,
+  "bonferroni_threshold": 0.0025,
+  "segments": {
+    "S1": {
+      "n_fit": 307,
+      "n_eval": 311,
+      "alpha": 0.0,
+      "beta": 0.9659017539280386,
+      "h0_beta": 0.9659016681608663,
+      "lrt_statistic": 2.9558577807620168e-12,
+      "lrt_p": 0.9999986282283326,
+      "bonferroni_threshold": 0.0025,
+      "delta_ll_per_race": 7.663140344504882e-09,
+      "eval_top1": 0.36012861736334406,
+      "eval_spearman": 0.5565277671676382,
+      "primary_pass": false,
+      "leak_stop": false
+    },
+    "S3": {
+      "n_fit": 538,
+      "n_eval": 336,
+      "alpha": 0.0,
+      "beta": 1.0210393001746387,
+      "h0_beta": 1.0210389996818034,
+      "lrt_statistic": 5.5933924159035087e-11,
+      "lrt_p": 0.9999940327022812,
+      "bonferroni_threshold": 0.0025,
+      "delta_ll_per_race": 1.2884776579014101e-08,
+      "eval_top1": 0.3541666666666667,
+      "eval_spearman": 0.5327907106587342,
+      "primary_pass": false,
+      "leak_stop": false
+    },
+    "S4": {
+      "n_fit": 1506,
+      "n_eval": 1516,
+      "alpha": 0.0,
+      "beta": 0.9909549667765769,
+      "h0_beta": 0.9909549549924306,
+      "lrt_statistic": -4.547473508864641e-12,
+      "lrt_p": 1.0,
+      "bonferroni_threshold": 0.0025,
+      "delta_ll_per_race": 3.042757157345477e-10,
+      "eval_top1": 0.34366754617414247,
+      "eval_spearman": 0.5362261781449519,
+      "primary_pass": false,
+      "leak_stop": false
+    },
+    "S5": {
+      "n_fit": 2162,
+      "n_eval": 2163,
+      "alpha": 0.0,
+      "beta": 1.0236560175320315,
+      "h0_beta": 1.0236561902499006,
+      "lrt_statistic": 4.001776687800884e-11,
+      "lrt_p": 0.9999949526143758,
+      "bonferroni_threshold": 0.0025,
+      "delta_ll_per_race": -1.7818395647850593e-09,
+      "eval_top1": 0.35136384650947755,
+      "eval_spearman": 0.5749397304147352,
+      "primary_pass": false,
+      "leak_stop": false
+    }
+  },
+  "primary_pass_segments": [],
+  "any_leak_stop": false,
+  "verdict": "market_efficiency_holds_across_segments"
+}

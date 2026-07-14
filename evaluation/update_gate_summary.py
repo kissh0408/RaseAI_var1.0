@@ -49,6 +49,46 @@ def _collect_alpha_gate_reports(reports_dir: Path, root: Path) -> dict:
     }
 
 
+# evaluator formal sign-off date for P2 Track B (procedure verified 2026-07-10;
+# spec: docs/specs/2026-07-10-p2-track-b-training-spec.md, all 5 candidates failed
+# the primary gamma-LRT gate, retreat criterion B-4 applied).
+TRACK_B_EVALUATOR_PASS_DATE = "2026-07-10"
+
+
+def _track_b_section(track_b_path: Path, root: Path) -> dict:
+    """Summarize the isolated track_b_training experiment (P2, JV-Link workout data)."""
+    payload = _load(track_b_path)
+    if not payload:
+        return {"status": "unmeasured", "see": _rel(track_b_path, root)}
+    candidates = {
+        key: {
+            "id": cand.get("id"),
+            "name": cand.get("name"),
+            "gamma": cand.get("gamma"),
+            "gamma_lrt_p": cand.get("gamma_lrt_p"),
+            "delta_ll_per_race": cand.get("delta_ll_per_race"),
+            "eval_top1": cand.get("eval_top1"),
+            "eval_spearman": cand.get("eval_spearman"),
+            "primary_pass": cand.get("primary_pass"),
+            "leak_stop": cand.get("leak_stop"),
+        }
+        for key, cand in payload.get("candidates", {}).items()
+    }
+    return {
+        "status": "measured",
+        "verdict": payload.get("verdict"),
+        "candidates": candidates,
+        "candidates_completed": payload.get("candidates_completed"),
+        "evaluator_pass": TRACK_B_EVALUATOR_PASS_DATE,
+        "note": (
+            "P2 Track B primary gamma-LRT gate (fit=2023, eval=2024, TEST untouched). "
+            "All 5 pre-registered workout time-series candidates failed p<0.01 & dLL/race>0; "
+            "retreat criterion B-4: no market-beating signal in JV-Link training data at current granularity."
+        ),
+        "see": _rel(track_b_path, root),
+    }
+
+
 def _place_section(place_path: Path, root: Path) -> dict:
     place = _load(place_path)
     if not place:
@@ -76,6 +116,7 @@ def build_gate_summary(reports_dir: Path = REPORTS, *, root: Path = ROOT) -> dic
     fusion_oos_path = reports_dir / "fusion_oos_fold2.json"
     betting_oos_path = reports_dir / "betting_backtest_oos.json"
     place_path = reports_dir / "place_baseline_oos.json"
+    track_b_path = root / "pure_rank" / "experiments" / "track_b_training" / "results" / "track_b_summary.json"
 
     fusion = _load(fusion_path)
     betting = _load(betting_path)
@@ -158,6 +199,7 @@ def build_gate_summary(reports_dir: Path = REPORTS, *, root: Path = ROOT) -> dic
         "phase2_l2_gates": phase2,
         "phase3_l3_gates": phase3,
         "alpha_gate": _collect_alpha_gate_reports(reports_dir, root),
+        "track_b_training": _track_b_section(track_b_path, root),
         "track_c_place": _place_section(place_path, root),
         "contaminated_reference_runs": {
             "note": "Old measurement with 15-model all-fold average scores; not valid for pass/fail.",

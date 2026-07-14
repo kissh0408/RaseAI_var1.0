@@ -1,0 +1,178 @@
+{
+  "protocol": {
+    "stage": "stage_v1_risk_valid",
+    "period": "2024-01-01..2024-12-31",
+    "grid": [
+      0.001,
+      0.0005,
+      0.00025
+    ],
+    "f0_for_scaling": 0.001,
+    "monthly_mdd_limit": 0.15,
+    "safety_factor_k": 0.5,
+    "busiest_day_exposure_headroom_limit": 0.125,
+    "multipliers": [
+      0.5,
+      0.75,
+      1.25,
+      1.5
+    ],
+    "decision_rule": "v2 variable-sizing version: f_scale = monthly_mdd_limit / (worst_month_dd_var@f0 / f0), f0=0.001; f_capped = 0.5 * f_scale; adopt largest value in grid [0.001, 0.0005, 0.00025] (downward-extension only) with f <= f_capped, then step down within eligible candidates until busiest_day_exposure <= 0.125. base_stake is held exactly at 400 yen for every grid candidate via bankroll_f = min_bankroll_variable(f) = 4*stake_rounding_yen/f (spec §3.3), so worst_month_dd scales linearly in f by construction."
+  },
+  "worst_month_dd_var_at_f0": 0.08005,
+  "f_scale": 0.0018738288569643974,
+  "f_capped": 0.0009369144284821987,
+  "grid_results": {
+    "0.001": {
+      "f": 0.001,
+      "bankroll": 400000.0,
+      "base_stake": 400.0,
+      "variable": {
+        "worst_month_dd": 0.08005,
+        "monthly_dd_by_month": {
+          "2024-01": 0.0104,
+          "2024-02": 0.059525,
+          "2024-03": 0.0407,
+          "2024-04": 0.035875,
+          "2024-05": 0.0432,
+          "2024-06": 0.037825,
+          "2024-07": 0.0118,
+          "2024-08": 0.073,
+          "2024-09": 0.048275,
+          "2024-10": 0.08005,
+          "2024-11": 0.067275,
+          "2024-12": 0.029375
+        },
+        "busiest_day": "2024-04-20",
+        "busiest_day_exposure": 0.03275
+      },
+      "flat_same_bankroll": {
+        "worst_month_dd": 0.0798,
+        "monthly_dd_by_month": {
+          "2024-01": 0.0256,
+          "2024-02": 0.0798,
+          "2024-03": 0.0229,
+          "2024-04": 0.043,
+          "2024-05": 0.0566,
+          "2024-06": 0.0384,
+          "2024-07": 0.0122,
+          "2024-08": 0.0673,
+          "2024-09": 0.0525,
+          "2024-10": 0.0784,
+          "2024-11": 0.0462,
+          "2024-12": 0.0222
+        }
+      }
+    },
+    "0.0005": {
+      "f": 0.0005,
+      "bankroll": 800000.0,
+      "base_stake": 400.0,
+      "variable": {
+        "worst_month_dd": 0.040025,
+        "monthly_dd_by_month": {
+          "2024-01": 0.0052,
+          "2024-02": 0.0297625,
+          "2024-03": 0.02035,
+          "2024-04": 0.0179375,
+          "2024-05": 0.0216,
+          "2024-06": 0.0189125,
+          "2024-07": 0.0059,
+          "2024-08": 0.0365,
+          "2024-09": 0.0241375,
+          "2024-10": 0.040025,
+          "2024-11": 0.0336375,
+          "2024-12": 0.0146875
+        },
+        "busiest_day": "2024-04-20",
+        "busiest_day_exposure": 0.016375
+      },
+      "flat_same_bankroll": {
+        "worst_month_dd": 0.0399,
+        "monthly_dd_by_month": {
+          "2024-01": 0.0128,
+          "2024-02": 0.0399,
+          "2024-03": 0.01145,
+          "2024-04": 0.0215,
+          "2024-05": 0.0283,
+          "2024-06": 0.0192,
+          "2024-07": 0.0061,
+          "2024-08": 0.03365,
+          "2024-09": 0.02625,
+          "2024-10": 0.0392,
+          "2024-11": 0.0231,
+          "2024-12": 0.0111
+        }
+      }
+    },
+    "0.00025": {
+      "f": 0.00025,
+      "bankroll": 1600000.0,
+      "base_stake": 400.0,
+      "variable": {
+        "worst_month_dd": 0.0200125,
+        "monthly_dd_by_month": {
+          "2024-01": 0.0026,
+          "2024-02": 0.01488125,
+          "2024-03": 0.010175,
+          "2024-04": 0.00896875,
+          "2024-05": 0.0108,
+          "2024-06": 0.00945625,
+          "2024-07": 0.00295,
+          "2024-08": 0.01825,
+          "2024-09": 0.01206875,
+          "2024-10": 0.0200125,
+          "2024-11": 0.01681875,
+          "2024-12": 0.00734375
+        },
+        "busiest_day": "2024-04-20",
+        "busiest_day_exposure": 0.0081875
+      },
+      "flat_same_bankroll": {
+        "worst_month_dd": 0.01995,
+        "monthly_dd_by_month": {
+          "2024-01": 0.0064,
+          "2024-02": 0.01995,
+          "2024-03": 0.005725,
+          "2024-04": 0.01075,
+          "2024-05": 0.01415,
+          "2024-06": 0.0096,
+          "2024-07": 0.00305,
+          "2024-08": 0.016825,
+          "2024-09": 0.013125,
+          "2024-10": 0.0196,
+          "2024-11": 0.01155,
+          "2024-12": 0.00555
+        }
+      }
+    }
+  },
+  "exposure_check_log": [
+    {
+      "f": 0.0005,
+      "busiest_day_exposure": 0.016375,
+      "headroom_ok": true
+    }
+  ],
+  "adopted_f_var_before_exposure_check": 0.0005,
+  "adopted_f_var": 0.0005,
+  "adopted_bankroll": 800000.0,
+  "danger_flags_reference": {
+    "0.001": {
+      "danger_roi_gt_100_reference": null
+    },
+    "0.0005": {
+      "danger_roi_gt_100_reference": null
+    },
+    "0.00025": {
+      "danger_roi_gt_100_reference": null
+    }
+  },
+  "caveats": [
+    "先行検証（confidence-tiers §15、verdict=confidence_does_not_predict_market_edge）で margin（自信度）は対1番人気ROI優位を予測しないことが統計的に確定している（H1〜H4・順序仮説すべて p>=0.24、Bonferroni閾値0.002を大きく上回る）。",
+    "自信度が高い階層ほどモデル予測1位が1番人気と一致する割合が上昇する（T1:37.4%→T4:74.2%、平均オッズも4.64倍→3.26倍と単調低下）。自信度で重み付けすると、モデルの数少ない優位性の源泉（過剰人気馬回避）を薄めるリスクがある。",
+    "本ステージはリスク（月次MDD・最繁忙日エクスポージャ）の測定・機械的導出のみを行い、着順・payoutは決済（win/pnl）計算にのみ使用する。倍率・f_varの選択にROI・的中率は使用していない（outcome-blind設計。仕様書§0.5）。",
+    "flat_same_bankroll系列との月次DD比較は記述的な比較であり、可変系列のROI優劣を意味しない。"
+  ],
+  "disclaimer": "本可変サイジングはユーザーの設計選好（自信度に応じたリスク配分）の実装であり、ROI改善を目的・根拠としない。先行検証（docs/specs/2026-07-11-confidence-tiers-spec.md §15、verdict=confidence_does_not_predict_market_edge）で自信度は対1番人気ROI優位を予測しないことが確定しており、自信度加重はモデルの優位性の源泉（過剰人気馬回避）を薄めるリスクが記述的に示唆されている。本推奨は市場に対する相対的な損失最小化の枠内の配分変更であり、黒字化を保証するものではない（fold2 OOS実測: ROI 81.89%、元本の約18%の期待損失）"
+}

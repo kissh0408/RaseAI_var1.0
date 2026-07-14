@@ -1,0 +1,76 @@
+{
+  "_comment": "cross_pool_divergence 実験専用 config。仕様書 docs/specs/2026-07-10-p4-cross-pool-divergence-spec.md の値を収納する受け皿。後出し変更禁止。",
+  "bet_types": ["place", "wide", "quinella"],
+  "pop_bands_single": {
+    "POP1": {"rank_min": 1, "rank_max": 1},
+    "POP2": {"rank_min": 2, "rank_max": 3},
+    "POP3": {"rank_min": 4, "rank_max": 6},
+    "POP4": {"rank_min": 7, "rank_max": null}
+  },
+  "pop_band_order_single": ["POP1", "POP2", "POP3", "POP4"],
+  "pair_top_rank_max": 3,
+  "pair_bands": ["PAIR_TOP", "PAIR_MIX", "PAIR_LONG"],
+  "fs_bands": {
+    "FS_S": {"horse_count_min": 5, "horse_count_max": 8},
+    "FS_M": {"horse_count_min": 9, "horse_count_max": 13},
+    "FS_L": {"horse_count_min": 14, "horse_count_max": 18}
+  },
+  "fs_band_order": ["FS_S", "FS_M", "FS_L"],
+  "k_max": 30,
+  "place": {
+    "m_small_field": 2,
+    "m_normal_field": 3,
+    "small_field_horse_count_max": 7,
+    "horse_count_min": 5,
+    "horse_count_max": 18,
+    "t_place": 0.20
+  },
+  "wide": {
+    "m": 3,
+    "horse_count_min": 8,
+    "horse_count_max": 18
+  },
+  "quinella": {
+    "m": 1,
+    "horse_count_min": 8,
+    "horse_count_max": 18
+  },
+  "max_horses_per_race": 18,
+  "q_method": "proportional",
+  "fusion_params_source": "evaluation/reports/fusion_oos_fold2.json",
+  "fusion_params_key": "formal",
+  "protocol": {
+    "fit_start": "2023-01-01",
+    "fit_end": "2024-12-31",
+    "test_start": "2025-01-01"
+  },
+  "thresholds": {
+    "n_units_min": 300,
+    "sum_p_theo_min": 30,
+    "d_adj_pass": 0.03,
+    "bonferroni_alpha": 0.01,
+    "sign_consistency_years": [2023, 2024]
+  },
+  "bootstrap": {
+    "B": 10000,
+    "seed": 42,
+    "method": "cluster_race_id_percentile"
+  },
+  "payout_concentration_gate": {
+    "top1_payout_share_max": 0.30,
+    "n_hits_min": 10
+  },
+  "anomaly_thresholds": {
+    "roi_diagnosis_high_pct": 1.20,
+    "roi_extreme_pct": 1.50,
+    "d_adj_extreme_pp": 0.15
+  },
+  "verdict": {
+    "all_below_threshold": "cross_pool_divergence_within_takeout_wall"
+  },
+  "exclusion_filters": {
+    "grade_code_exclude": [8, 9],
+    "abnormal_code_exclude": [1, 3, 4],
+    "horse_count_min": 5
+  }
+}

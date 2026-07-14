@@ -1,0 +1,166 @@
+{
+  "protocol": {
+    "stage": "stage_v3_test",
+    "period": "2025-01-01..",
+    "purpose": "リスク指標の確認（唯一の合否対象）と再現性アンカー照合。ROI差は記述的報告のみで、判定・優位性主張には使わない（仕様書§0.5・§4 Stage V3・§6.2）。1回のみ実行。",
+    "f_var": 0.0005,
+    "bankroll": 800000.0,
+    "base_stake": 400.0,
+    "multipliers": [
+      0.5,
+      0.75,
+      1.25,
+      1.5
+    ],
+    "monthly_mdd_limit": 0.15,
+    "max_daily_exposure": 0.25
+  },
+  "risk_metrics": {
+    "variable_series": {
+      "worst_month_dd": 0.04235,
+      "monthly_dd_by_month": {
+        "2025-01": 0.0208375,
+        "2025-02": 0.0182625,
+        "2025-03": 0.0034625,
+        "2025-04": 0.0091125,
+        "2025-05": 0.0298125,
+        "2025-06": 0.0081375,
+        "2025-07": 0.024225,
+        "2025-08": 0.0101,
+        "2025-09": 0.0292,
+        "2025-10": 0.0181375,
+        "2025-11": 0.030775,
+        "2025-12": 0.017325,
+        "2026-01": 0.0219,
+        "2026-02": 0.0061125,
+        "2026-03": 0.0292875,
+        "2026-04": 0.04235,
+        "2026-05": 0.0391875
+      },
+      "busiest_day": "2025-02-09",
+      "busiest_day_exposure": 0.0175
+    },
+    "flat_series_same_bankroll": {
+      "worst_month_dd": 0.03445,
+      "monthly_dd_by_month": {
+        "2025-01": 0.0236,
+        "2025-02": 0.01935,
+        "2025-03": 0.00235,
+        "2025-04": 0.009550000000000003,
+        "2025-05": 0.0281,
+        "2025-06": 0.0034999999999999996,
+        "2025-07": 0.02685,
+        "2025-08": 0.00755,
+        "2025-09": 0.0211,
+        "2025-10": 0.0172,
+        "2025-11": 0.03205,
+        "2025-12": 0.006050000000000002,
+        "2026-01": 0.0198,
+        "2026-02": 0.0,
+        "2026-03": 0.0305,
+        "2026-04": 0.0335,
+        "2026-05": 0.03445
+      }
+    },
+    "worst_month_dd_ok": true,
+    "busiest_day_exposure_ok": true,
+    "risk_gates_pass": true
+  },
+  "reproduction_anchor": {
+    "measured": {
+      "n_bets": 3758,
+      "stake_total": 375800.0,
+      "payout_total": 313220.0,
+      "roi_pct": 83.34752527940394
+    },
+    "reference": {
+      "source": "evaluation\\reports\\betting_backtest_oos_flat.json",
+      "n_bets": 3758,
+      "roi_pct": 83.34752527940394
+    },
+    "tolerance_pp": 0.1,
+    "tolerance_n": 0,
+    "n_match": true,
+    "roi_match_within_tolerance": true,
+    "reproduction_ok": true
+  },
+  "descriptive_report": {
+    "variable_series": {
+      "n_bets": 3758,
+      "stake_total": 1524800.0,
+      "payout_total": 1238220.0,
+      "roi_pct": 81.20540398740819,
+      "hit_rate": 0.24986695050558808
+    },
+    "flat_series_same_bankroll": {
+      "n_bets": 3758,
+      "stake_total": 1503200.0,
+      "payout_total": 1252880.0,
+      "roi_pct": 83.34752527940394,
+      "hit_rate": 0.24986695050558808
+    },
+    "roi_diff_pp_variable_minus_flat": -2.1421212919957497,
+    "roi_note": "可変系列とflat系列のROI差は記述的な測定値であり、符号や大きさに関わらず判定・倍率再調整の材料には用いない（仕様書§0.5・§6.2）。",
+    "tier_breakdown_variable_series": [
+      {
+        "tier": 1,
+        "n_bets": 869,
+        "stake_sum": 173800.0,
+        "payout_sum": 159000.0,
+        "roi_pct": 91.48446490218643,
+        "hit_rate": 0.22094361334867663,
+        "n_hits": 192
+      },
+      {
+        "tier": 2,
+        "n_bets": 938,
+        "stake_sum": 281400.0,
+        "payout_sum": 242820.0,
+        "roi_pct": 86.28997867803838,
+        "hit_rate": 0.24520255863539445,
+        "n_hits": 230
+      },
+      {
+        "tier": 3,
+        "n_bets": 1010,
+        "stake_sum": 505000.0,
+        "payout_sum": 401400.0,
+        "roi_pct": 79.48514851485149,
+        "hit_rate": 0.25544554455445545,
+        "n_hits": 258
+      },
+      {
+        "tier": 4,
+        "n_bets": 941,
+        "stake_sum": 564600.0,
+        "payout_sum": 435000.0,
+        "roi_pct": 77.04569606801275,
+        "hit_rate": 0.27523910733262485,
+        "n_hits": 259
+      }
+    ]
+  },
+  "n_bets_match": true,
+  "race_set_match": true,
+  "win_flags_match": true,
+  "effective_multiplier_matches_design": true,
+  "danger_signals": {
+    "danger_roi_gt_100_variable": false,
+    "danger_roi_gt_100_flat": false,
+    "leak_review_required_by_tier": {
+      "1": false,
+      "2": false,
+      "3": false,
+      "4": false
+    },
+    "any_danger": false
+  },
+  "caveats": [
+    "先行検証（confidence-tiers §15、verdict=confidence_does_not_predict_market_edge）で margin（自信度）は対1番人気ROI優位を予測しないことが統計的に確定している（H1〜H4・順序仮説すべて p>=0.24、Bonferroni閾値0.002を大きく上回る）。",
+    "自信度が高い階層ほどモデル予測1位が1番人気と一致する割合が上昇する（T1:37.4%→T4:74.2%、平均オッズも4.64倍→3.26倍と単調低下）。自信度で重み付けすると、モデルの数少ない優位性の源泉（過剰人気馬回避）を薄めるリスクがある。",
+    "本測定は合否をリスク指標（worst月次DD・最繁忙日エクスポージャ）のみで判定する（仕様書§4 Stage V3-1）。ROI差はいかなる符号・大きさでも性能の優劣を意味しない（descriptive_report は事前登録された参考測定）。",
+    "flat_series_same_bankrollは倍率=1固定・base_stake=400円固定の比較系列であり、本番の flat_top1 運用（bankroll=100,000, stake_fraction=0.001）とは規模が異なる（仕様書§3.3: stake規模を揃えるための同一bankroll比較）。",
+    "先行検証（confidence-tiers §15、verdict=confidence_does_not_predict_market_edge）で margin（自信度）は対1番人気ROI優位を予測しないことが確定している。本Stageの目的はリスク配分の設計選好の妥当性確認であり、性能改善の検証ではない。"
+  ],
+  "disclaimer": "本可変サイジングはユーザーの設計選好（自信度に応じたリスク配分）の実装であり、ROI改善を目的・根拠としない。先行検証（docs/specs/2026-07-11-confidence-tiers-spec.md §15、verdict=confidence_does_not_predict_market_edge）で自信度は対1番人気ROI優位を予測しないことが確定しており、自信度加重はモデルの優位性の源泉（過剰人気馬回避）を薄めるリスクが記述的に示唆されている。本推奨は市場に対する相対的な損失最小化の枠内の配分変更であり、黒字化を保証するものではない（fold2 OOS実測: ROI 81.89%、元本の約18%の期待損失）"
+}

@@ -50,7 +50,8 @@
     "features_version": "v39_course_slim",
     "hc_dir": "common/data/output/slop_hc",
     "wc_dir": "common/data/output/wood_wc",
-    "hr_dir": "common/data/output/race_hr"
+    "hr_dir": "common/data/output/race_hr",
+    "cushion_dir": "common/data/output/cushion"
   },
   "features": {
     "categorical": [

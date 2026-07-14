@@ -1,0 +1,70 @@
+{
+  "_comment": "track_b_training 実験専用 config。仕様書 docs/specs/2026-07-10-p2-track-b-training-spec.md の値を収納する受け皿。後出し変更禁止。",
+  "paths": {
+    "hc_preprocessed": "pure_rank/data/01_preprocessed/HC_preprocessed.parquet",
+    "wc_preprocessed": "pure_rank/data/01_preprocessed/WC_preprocessed.parquet",
+    "scores_fold2_oos": "pure_rank/data/03_scores/scores_v39_course_slim_fold2_oos.parquet",
+    "features_v39_course_slim": "pure_rank/data/02_features/features_v39_course_slim.parquet"
+  },
+  "window_days": 30,
+  "wc_start": "2021-07-27",
+  "min_n": {
+    "b1_intensity_trend": 3,
+    "b2_freq_change_baseline_races": 3,
+    "b3_accel_profile_career": 6,
+    "b3_accel_profile_recent": 3,
+    "b4_fade_trend": 3,
+    "b5_wc_switch_window": 2,
+    "b5_wc_switch_career": 5
+  },
+  "candidates": {
+    "b1": {
+      "id": "B-1",
+      "name": "b1_intensity_trend",
+      "output": "cand_b1_intensity_trend.parquet",
+      "sign": "cand_score = -slope (time-shrinking = improvement = positive)"
+    },
+    "b2": {
+      "id": "B-2",
+      "name": "b2_freq_change",
+      "output": "cand_b2_freq_change.parquet",
+      "sign": "cand_score = n_interval / baseline (more workouts than own median = positive)"
+    },
+    "b3": {
+      "id": "B-3",
+      "name": "b3_accel_profile",
+      "output": "cand_b3_accel_profile.parquet",
+      "sign": "cand_score = recent3_mean - career_mean (recent above own baseline = positive)"
+    },
+    "b4": {
+      "id": "B-4",
+      "name": "b4_fade_trend",
+      "output": "cand_b4_fade_trend.parquet",
+      "sign": "cand_score = -slope_fade (fade ratio decreasing over time = improvement = positive)"
+    },
+    "b5": {
+      "id": "B-5",
+      "name": "b5_wc_switch",
+      "output": "cand_b5_wc_switch.parquet",
+      "sign": "cand_score = wc_share_recent - wc_share_career (increasing wood-chip share = positive)"
+    }
+  },
+  "candidate_order": ["b1", "b2", "b3", "b4", "b5"],
+  "gate_thresholds": {
+    "gamma_lrt_alpha": 0.01,
+    "top1_regression_floor": 0.2999,
+    "leak_top1": 0.40,
+    "leak_spearman": 0.60,
+    "leak_abs_corr": 0.70
+  },
+  "protocol": {
+    "fit_year": 2023,
+    "eval_year": 2024,
+    "test_start": "2025-01-01",
+    "fit_start_test_stage": "2023-01-01",
+    "fit_end_test_stage": "2024-12-31"
+  },
+  "verdict": {
+    "all_fail": "training_data_no_market_signal_at_current_granularity"
+  }
+}

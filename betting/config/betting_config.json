@@ -1,5 +1,15 @@
 {
   "version": "benter_betting_v1",
+  "mode": "loss_min_top1",
+  "loss_min": {
+    "selection": "model_top1",
+    "score_col": "pure_score_z",
+    "stake_fraction": 0.001,
+    "stake_rounding_yen": 100,
+    "min_bankroll_yen": 100000,
+    "stake_fraction_frozen": true,
+    "stake_fraction_status": "FROZEN (Rule 3) — decision rule v2 (docs/specs/2026-07-10-loss-minimization-implementation-spec.md §1.2 R2): f_scale = monthly_mdd_limit / (worst_month_dd@f0=0.0025 / f0) = 0.15 / (0.1596/0.0025) = 0.002350; f_capped = 0.5 * f_scale = 0.001175; adopted = max of grid {0.001, 0.0025, 0.005, 0.01} with f <= f_capped = 0.001. Machine-derived via betting/src/derive_flat_fraction.py on 2024-01-01..2024-12-31 VALID data only (evaluation/reports/flat_fraction_valid_2024.json). TEST (2025+) not read for this decision."
+  },
   "ev_threshold": 1.05,
   "ev_threshold_grid": [1.02, 1.05, 1.08, 1.10, 1.15],
   "ev_haircut": 0.95,

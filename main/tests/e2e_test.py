@@ -490,6 +490,11 @@ def test_combo_anchor_kpi_smoke() -> None:
 # テスト9: monthly_dd_tracker（Phase 0 P0-5）
 # ---------------------------------------------------------------------------
 
+@pytest.mark.skip(
+    reason="main/pipeline/monthly_dd_tracker.py は main.main 経由でのみ参照されており、"
+    "2026-07-10 のL4復旧（main.main アーカイブ）に伴い main/archive/pipeline/ へ隔離済み。"
+    "本番の月次MDD監視は betting/src/risk_limits.py::RiskLimits が担う。"
+)
 def test_monthly_dd_tracker() -> None:
     """P0-5: 月次DDトラッカーの読み書き・閾値判定。"""
     print("\nTest 9: monthly_dd_tracker")

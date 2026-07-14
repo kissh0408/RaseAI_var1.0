@@ -1,0 +1,221 @@
+{
+  "disclaimer": "本推奨は市場に対する相対的な損失最小化を目的とし、黒字化を保証するものではない（fold2 OOS実測: ROI 81.89%、元本の約18%の期待損失）",
+  "protocol": {
+    "stage": "stage2_valid_primary",
+    "period": "2024-01-01..2024-12-31",
+    "score_col": "pure_score_z",
+    "boundaries_frozen": {
+      "b1": 0.11895233392715454,
+      "b2": 0.28122442960739136,
+      "b3": 0.5161097198724747
+    },
+    "boundaries_source": "docs/specs/2026-07-11-confidence-tiers-spec.md §13 (stage1_boundaries.json, 2023 outcome-blind)",
+    "odds_exclusion_model_side": {
+      "min_odds": 2.0,
+      "max_odds": 50.0
+    },
+    "odds_exclusion_favorite_side": "none (spec §5.2: baseline is unexcluded favorite on same race set)",
+    "stake_yen_flat": 100.0,
+    "seed": 42,
+    "B": 10000
+  },
+  "K_hyp": 5,
+  "bonferroni_threshold": 0.002,
+  "tiers": [
+    {
+      "tier": 1,
+      "n_races": 666,
+      "min_sample_ok": true,
+      "boundaries_used": [
+        0.11895233392715454,
+        0.28122442960739136,
+        0.5161097198724747
+      ],
+      "roi_model_pct": 82.85285285285285,
+      "roi_fav_pct": 80.97597597597598,
+      "delta_pp": 1.8768768768768762,
+      "bootstrap_p_one_sided": 0.4053,
+      "ci95_delta_pp": [
+        -12.447447447447447,
+        17.042042042042038
+      ],
+      "hit_rate_model": 0.23123123123123124,
+      "hit_rate_fav": 0.2972972972972973,
+      "favorite_agreement_rate": 0.3738738738738739,
+      "mean_odds": 4.640090090090091,
+      "median_odds": 3.8,
+      "margin_mean": 0.057900331310323766,
+      "margin_min": 0.00016295909881591797,
+      "margin_max": 0.11890149116516113,
+      "n_hits_model": 154,
+      "payout_concentration_gate": {
+        "top1_payout_share": 0.019572308807538963,
+        "payout_not_concentrated_top1_lte_30pct": true,
+        "n_hits_gte_10": true,
+        "diagnosis_valid": true
+      },
+      "danger_flags": {
+        "leak_review_required": false,
+        "danger_roi_gt_100": false,
+        "large_delta_gt_20pp": false
+      }
+    },
+    {
+      "tier": 2,
+      "n_races": 677,
+      "min_sample_ok": true,
+      "boundaries_used": [
+        0.11895233392715454,
+        0.28122442960739136,
+        0.5161097198724747
+      ],
+      "roi_model_pct": 74.04726735598227,
+      "roi_fav_pct": 84.903988183161,
+      "delta_pp": -10.856720827178734,
+      "bootstrap_p_one_sided": 0.9465,
+      "ci95_delta_pp": [
+        -23.574593796159526,
+        2.481536189069422
+      ],
+      "hit_rate_model": 0.22008862629246675,
+      "hit_rate_fav": 0.310192023633678,
+      "favorite_agreement_rate": 0.48892171344165436,
+      "mean_odds": 4.162038404726736,
+      "median_odds": 3.5,
+      "margin_mean": 0.19423073178027897,
+      "margin_min": 0.11952102184295654,
+      "margin_max": 0.28116774559020996,
+      "n_hits_model": 149,
+      "payout_concentration_gate": {
+        "top1_payout_share": 0.01775384001595851,
+        "payout_not_concentrated_top1_lte_30pct": true,
+        "n_hits_gte_10": true,
+        "diagnosis_valid": true
+      },
+      "danger_flags": {
+        "leak_review_required": false,
+        "danger_roi_gt_100": false,
+        "large_delta_gt_20pp": false
+      }
+    },
+    {
+      "tier": 3,
+      "n_races": 641,
+      "min_sample_ok": true,
+      "boundaries_used": [
+        0.11895233392715454,
+        0.28122442960739136,
+        0.5161097198724747
+      ],
+      "roi_model_pct": 78.54914196567863,
+      "roi_fav_pct": 77.65990639625585,
+      "delta_pp": 0.8892355694227749,
+      "bootstrap_p_one_sided": 0.4509,
+      "ci95_delta_pp": [
+        -12.496099843993758,
+        14.508970358814347
+      ],
+      "hit_rate_model": 0.23868954758190328,
+      "hit_rate_fav": 0.27769110764430577,
+      "favorite_agreement_rate": 0.5413416536661466,
+      "mean_odds": 3.632761310452418,
+      "median_odds": 3.2,
+      "margin_mean": 0.3871708121760959,
+      "margin_min": 0.2814260721206665,
+      "margin_max": 0.5155943632125854,
+      "n_hits_model": 153,
+      "payout_concentration_gate": {
+        "top1_payout_share": 0.018867924528301886,
+        "payout_not_concentrated_top1_lte_30pct": true,
+        "n_hits_gte_10": true,
+        "diagnosis_valid": true
+      },
+      "danger_flags": {
+        "leak_review_required": false,
+        "danger_roi_gt_100": false,
+        "large_delta_gt_20pp": false
+      }
+    },
+    {
+      "tier": 4,
+      "n_races": 624,
+      "min_sample_ok": true,
+      "boundaries_used": [
+        0.11895233392715454,
+        0.28122442960739136,
+        0.5161097198724747
+      ],
+      "roi_model_pct": 81.13782051282051,
+      "roi_fav_pct": 77.51602564102565,
+      "delta_pp": 3.62179487179487,
+      "bootstrap_p_one_sided": 0.2408,
+      "ci95_delta_pp": [
+        -6.169871794871796,
+        13.878205128205124
+      ],
+      "hit_rate_model": 0.28205128205128205,
+      "hit_rate_fav": 0.2932692307692308,
+      "favorite_agreement_rate": 0.7419871794871795,
+      "mean_odds": 3.2583333333333333,
+      "median_odds": 2.8,
+      "margin_mean": 0.7909081796757303,
+      "margin_min": 0.5169134140014648,
+      "margin_max": 2.3225370049476624,
+      "n_hits_model": 176,
+      "payout_concentration_gate": {
+        "top1_payout_share": 0.024293896899071698,
+        "payout_not_concentrated_top1_lte_30pct": true,
+        "n_hits_gte_10": true,
+        "diagnosis_valid": true
+      },
+      "danger_flags": {
+        "leak_review_required": false,
+        "danger_roi_gt_100": false,
+        "large_delta_gt_20pp": false
+      }
+    }
+  ],
+  "ordering_contrast": {
+    "executed": true,
+    "c_pp": 1.7449179949179938,
+    "p_one_sided": 0.4171,
+    "ci95_pp": [
+      -16.421434655809662,
+      19.27171041233539
+    ]
+  },
+  "monotonicity_flag_descriptive_only": false,
+  "min_sample_all_tiers_ok": true,
+  "reproduction_gate": {
+    "n_bets": 2608,
+    "n_bets_expected": 2608,
+    "n_bets_match": true,
+    "hit_rate": 0.24233128834355827,
+    "hit_rate_expected": 0.24233128834355827,
+    "hit_rate_match_pm_0p1pp": true,
+    "roi_pct": 79.0989263803681,
+    "roi_pct_expected": 79.0989263803681,
+    "roi_match_pm_0p1pp": true,
+    "source": "evaluation/reports/flat_fraction_valid_2024.json",
+    "pass": true
+  },
+  "hypothesis_results": {
+    "H1_p": 0.4053,
+    "H2_p": 0.9465,
+    "H3_p": 0.4509,
+    "H4_p": 0.2408,
+    "H4_significant": false,
+    "H_ord_p": 0.4171,
+    "H_ord_significant": false
+  },
+  "primary_pass": false,
+  "primary_status": "primary_fail_all_hypotheses",
+  "verdict": "confidence_does_not_predict_market_edge",
+  "danger_signals_any": false,
+  "caveats": [
+    "階層境界はfold2 OOSスコアの2023年（early-stopping弱汚染年）のmargin分布からoutcome-blindに決定した。判定は完全OOSの2024年で実施しており、境界決定への汚染は判定へのリークにはならない（仕様書§4.2）。",
+    "本測定は確定/前日水準オッズベースであり、購入時点のオッズで優位が縮小しうる。",
+    "§5.4の記述的診断（favorite_agreement_rate等）は解釈補助であり判定には使用しない。",
+    "全体の期待値は負であり、測定対象は市場に対する相対的損失差である。"
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "generated_at": "2026-07-12T04:57:13.842878+00:00",
+  "inputs": {
+    "scores": "4bce051d59eaa6fbe929154e1fa507139848a4a4f7811fce4f0efb3338ae75d3",
+    "features": "8f7acde252bcd542933be46938f5c0ea9ed7189b13c258be7136597066aef79d"
+  },
+  "config": {
+    "version": "benter_v1",
+    "scores_version": "v39_course_slim",
+    "scores_path": "pure_rank/data/03_scores/scores_v39_course_slim.parquet",
+    "q_method": "proportional",
+    "q_power": 0.81,
+    "stern_lam2": 1.0,
+    "stern_lam3": 1.0,
+    "fit": {
+      "alpha_bounds": [
+        0.0,
+        5.0
+      ],
+      "beta_bounds": [
+        0.0,
+        3.0
+      ],
+      "market_only_beta": true
+    },
+    "walkforward_folds": "evaluation.splits.get_walkforward_folds"
+  },
+  "oos_report": {
+    "l1_scores": "v51_cushion (A1-A3,A6) fold2-only 5-seed ensemble (train<2023; 2024/2025 fully OOS)",
+    "fit_period": "2023-01-01..2024-12-31",
+    "test_period": "2025-01-01..",
+    "caveat": "2023 was fold2 early-stopping year (weak contamination, model selection only)",
+    "formal_judgment": "formal_fit_2023_2024"
+  },
+  "formal": {
+    "label": "formal_fit_2023_2024",
+    "alpha": 0.0,
+    "beta": 1.0343063196522795,
+    "market_only_beta": 1.0343057679845067,
+    "lam2": 0.6017948480093632,
+    "lam3": 0.6381071351194854,
+    "lrt_p_value": 1.0,
+    "fit_n_races": 6786,
+    "test_logloss_fusion": 1.9312364029748412,
+    "test_logloss_market": 1.931236392278456,
+    "test_top1": 0.3290052356020942,
+    "calibration_max_error_pp": 7.150956398106334,
+    "gates": {
+      "logloss_beats_market": false,
+      "top1_gate_33pct": false,
+      "phase2_pass": false
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "disclaimer": "本測定は境界決定(margin四分位算出)のみを行うoutcome-blindな統計処理であり、着順・払戻・ROI・的中率は本ステージで一切計算・出力していない。黒字化を示唆・保証するものではない。",
+  "protocol": {
+    "stage": "stage1_boundary_decision",
+    "period": "2023-01-01..2023-12-31",
+    "outcome_blind": true,
+    "outcome_blind_note": "本スクリプトは finish_rank/odds/payout/ROI/的中率を一切読み込まず・計算せず・出力しない（読み込み列は race_id/race_date/margin のみ）。",
+    "source_dataset": "betting\\experiments\\confidence_tiers\\data\\bets_dataset.parquet",
+    "quantile_method": "linear",
+    "score_col": "pure_score_z"
+  },
+  "n_2023": 2714,
+  "n_races_2023": 2714,
+  "n_margin_values": 2714,
+  "boundaries": {
+    "b1": 0.11895233392715454,
+    "b2": 0.28122442960739136,
+    "b3": 0.5161097198724747
+  },
+  "margin_distribution": {
+    "min": 0.00011104345321655273,
+    "max": 2.073673665523529,
+    "mean": 0.35725418996826286,
+    "std": 0.3060049997213351
+  },
+  "caveat": "fold2 OOSスコアの2023年はearly-stoppingに使われた弱汚染年（evaluation/reports/fusion_oos_fold2.json の protocol.caveat 参照）。ただし本ステージで得るのはmargin分布の四分位のみ（outcome-blind）であり、汚染がもたらしうるのはスコア分布のわずかな楽観化に留まる。判定は2024/2025の完全OOS年（Stage2/Stage3）で行うため、判定へのリークにはならない（仕様書§4.2）。",
+  "next_step": "本結果の [b1,b2,b3] と n_2023 を docs/specs/2026-07-11-confidence-tiers-spec.md §13 に追記し凍結してから Stage 2（run_stage2_valid.py）に進む。2024/2025年の結果は本ステージでは一切参照していない。"
+}

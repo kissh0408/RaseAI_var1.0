@@ -1,0 +1,6 @@
+{
+  "stage": "stage3_test",
+  "executed": false,
+  "reason": "no primary_pass segments in Stage 2; TEST left untouched per spec section 7",
+  "segments": {}
+}

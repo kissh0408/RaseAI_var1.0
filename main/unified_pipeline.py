@@ -177,7 +177,9 @@ def build_unified_export_df(
         if suffix in export_df.columns:
             export_df[base_col] = export_df[suffix]
 
-    if recommendations is not None and not recommendations.empty:
+    if recommendations is not None and not recommendations.empty and "ev" in recommendations.columns:
+        # loss_min_top1 mode recs have no EV column (no EV-threshold filter is used;
+        # see betting/src/flat_top1.py). expected_return is an ev_filter-mode-only field.
         recs = recommendations.copy()
         recs["race_id"] = recs["race_id"].astype(str)
         export_df = export_df.merge(
@@ -276,13 +278,20 @@ def run_unified_today(
 
     odds_df = _odds_from_se(se)
     odds_ts = datetime.now(timezone.utc).isoformat()
+    odds_source = "race_se_csv"
     if odds_csv is not None:
         from main.race_id_utils import load_realtime_odds
 
+        # load_realtime_odds() returns exactly race_id/horse_num/odds (no horse_id;
+        # O1-equivalent realtime feeds carry no pedigree id). horse_id is not required
+        # downstream: build_unified_export_df() already falls back to horse_id=race_id
+        # when the column is absent (see below). Selecting "horse_id" here previously
+        # raised KeyError unconditionally (bug fixed 2026-07-10).
         rt = load_realtime_odds(_resolve_path(odds_csv))
         rt["race_id"] = rt["race_id"].astype(str)
-        odds_df = rt[["race_id", "horse_id", "horse_num", "odds"]].dropna(subset=["odds"])
+        odds_df = rt[["race_id", "horse_num", "odds"]].dropna(subset=["odds"])
         odds_ts = datetime.now(timezone.utc).isoformat()
+        odds_source = "realtime_o1"
 
     params = load_fusion_params()
     fused_by_baba: dict[int, pd.DataFrame] = {}
@@ -299,11 +308,37 @@ def run_unified_today(
     primary_fused = fused_by_baba[tc].copy()
     bet_cfg = load_betting_config()
     bet_cfg["bankroll"] = bankroll
-    recs = run_recommendations(primary_fused, cfg=bet_cfg, odds_timestamp=odds_ts)
+    mode = bet_cfg.get("mode", "loss_min_top1")
+
+    skipped: pd.DataFrame | None = None
+    if mode == "loss_min_top1":
+        # L3 loss-minimization path (default, 2026-07-10): model rank-1 (pure_score_z),
+        # no EV threshold, flat sizing. See betting/src/flat_top1.py and
+        # docs/specs/2026-07-10-loss-minimization-implementation-spec.md.
+        from betting.src.flat_top1 import run_loss_min_recommendations
+
+        primary_scored = _race_z_from_rank_preds(rank_preds[tc])
+        recs, skipped = run_loss_min_recommendations(
+            primary_scored,
+            odds_df,
+            cfg=bet_cfg,
+            odds_timestamp=odds_ts,
+            bankroll=bankroll,
+            odds_source=odds_source,
+        )
+    else:
+        recs = run_recommendations(primary_fused, cfg=bet_cfg, odds_timestamp=odds_ts)
 
     if write_bets and len(recs) > 0:
         date_str = datetime.now().strftime("%Y%m%d")
-        save_recommendations(recs, ROOT / "main" / "results" / date_str)
+        if mode == "loss_min_top1":
+            from betting.src.flat_top1 import save_loss_min_recommendations, save_skipped_races
+
+            save_loss_min_recommendations(recs, ROOT / "main" / "results" / date_str)
+            if skipped is not None:
+                save_skipped_races(skipped, ROOT / "main" / "results" / date_str)
+        else:
+            save_recommendations(recs, ROOT / "main" / "results" / date_str)
 
     venue_files = 0
     venue_root = ROOT / "main" / "results"
@@ -325,7 +360,10 @@ def run_unified_today(
         "rank_scenarios": list(rank_preds.keys()),
         "fusion_alpha": params.get("alpha"),
         "fusion_beta": params.get("beta"),
+        "mode": mode,
+        "odds_source": odds_source,
         "recommendations": len(recs),
+        "skipped_races": int(len(skipped)) if skipped is not None else None,
         "venue_export_files": venue_files,
         "results_dir": str(venue_root),
         "predictions_with_bets_csv": str(PREDICTION_OUTPUT_PATH),

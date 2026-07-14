@@ -1,0 +1,65 @@
+{
+  "_comment": "alpha_segments 実験専用 config。仕様書 docs/specs/2026-07-09-p1-alpha-segments-spec.md の値を収納する受け皿。後出し変更禁止。",
+  "segments": {
+    "S1": {
+      "name": "debut_heavy",
+      "description": "新馬・未出走馬中心レース（hist_last_rank NaN 比率 >= 0.5）",
+      "column": "hist_last_rank",
+      "rule": "nan_ratio_gte",
+      "threshold": 0.5
+    },
+    "S2": {
+      "name": "small_field",
+      "description": "少頭数レース（horse_count <= 8）",
+      "column": "horse_count",
+      "rule": "lte",
+      "threshold": 8
+    },
+    "S3": {
+      "name": "heavy_track",
+      "description": "重・不良馬場（track_condition_code in (3,4)）",
+      "column": "track_condition_code",
+      "rule": "in",
+      "values": [3, 4]
+    },
+    "S4": {
+      "name": "local_venue",
+      "description": "ローカル開催場（中央4場=5,6,8,9 以外）",
+      "column": "course_code",
+      "rule": "in",
+      "values": [1, 2, 3, 4, 7, 10]
+    },
+    "S5": {
+      "name": "low_class",
+      "description": "低クラス条件戦（未勝利・1勝クラス）",
+      "column": "race_condition_code",
+      "rule": "in",
+      "values": [703, 5]
+    }
+  },
+  "segment_order": ["S1", "S2", "S3", "S4", "S5"],
+  "segment_columns_whitelist": [
+    "hist_last_rank", "horse_count", "track_condition_code",
+    "course_code", "race_condition_code"
+  ],
+  "protocol": {
+    "fit_year": 2023,
+    "eval_year": 2024,
+    "test_start": "2025-01-01",
+    "fit_start_test_stage": "2023-01-01",
+    "fit_end_test_stage": "2024-12-31"
+  },
+  "thresholds": {
+    "n_min_eval_2024": 300,
+    "lrt_alpha": 0.01,
+    "leak_top1": 0.40,
+    "leak_spearman": 0.60
+  },
+  "fusion_bounds": {
+    "alpha_bounds": [0.0, 5.0],
+    "beta_bounds": [0.0, 3.0]
+  },
+  "verdict": {
+    "all_fail": "market_efficiency_holds_across_segments"
+  }
+}

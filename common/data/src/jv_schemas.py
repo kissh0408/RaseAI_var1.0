@@ -542,6 +542,48 @@ for _i in range(1, 154):
     O3_SCHEMA[f"wide_odds_{_i:03d}_max"] = (_start + 9, 5)
     O3_SCHEMA[f"wide_odds_{_i:03d}_pop"] = (_start + 14, 3)
 
+# O1（単複枠オッズ）: docs/JV-Data.md「7. オッズ1（単複枠）（O1）」と照合。
+# 0B31（速報オッズ・単複枠）と 0B41（時系列オッズ・単複枠）はどちらもこの
+# O1 レコードフォーマットを使う。両者の違いはサーバ側の配信挙動
+# （0B31=最新スナップショットのみ、0B41=複数時点を時系列で配信）であり、
+# レイアウトは同一。announce_datetime（発表月日時分）は時系列オッズ使用時のみ
+# キーとして必須になる（中間オッズのみ設定）。
+O1_SCHEMA = {
+    "record_id": (1, 2),  # O1: オッズ1（単複枠）
+    "data_kubun": (3, 1),
+    "date_make": (4, 8),
+    "year": (12, 4),
+    "month_day": (16, 4),
+    "course_code": (20, 2),
+    "kai": (22, 2),
+    "nichi": (24, 2),
+    "race_num": (26, 2),
+    "announce_datetime": (28, 8),  # 月日時分各2桁。時系列オッズ使用時のみキー
+    "registered_count": (36, 2),
+    "running_count": (38, 2),
+    "sale_flag_win": (40, 1),
+    "sale_flag_place": (41, 1),
+    "sale_flag_bracket_quinella": (42, 1),
+    "place_payout_key": (43, 1),
+    "win_vote_count": (928, 11),
+    "place_vote_count": (939, 11),
+    "bracket_quinella_vote_count": (950, 11),
+    "record_separator": (961, 2),
+}
+
+for _i in range(1, 29):
+    _start = 44 + (_i - 1) * 8
+    O1_SCHEMA[f"win_odds_{_i:02d}_horse"] = (_start, 2)
+    O1_SCHEMA[f"win_odds_{_i:02d}_odds"] = (_start + 2, 4)
+    O1_SCHEMA[f"win_odds_{_i:02d}_pop"] = (_start + 6, 2)
+
+for _i in range(1, 29):
+    _start = 268 + (_i - 1) * 12
+    O1_SCHEMA[f"place_odds_{_i:02d}_horse"] = (_start, 2)
+    O1_SCHEMA[f"place_odds_{_i:02d}_min"] = (_start + 2, 4)
+    O1_SCHEMA[f"place_odds_{_i:02d}_max"] = (_start + 6, 4)
+    O1_SCHEMA[f"place_odds_{_i:02d}_pop"] = (_start + 10, 2)
+
 SCHEMAS = {
     "RA": RA_SCHEMA,
     "SE": SE_SCHEMA,
@@ -559,6 +601,7 @@ SCHEMAS = {
     "JC": JC_SCHEMA,
     "TC": TC_SCHEMA,
     "CC": CC_SCHEMA,
+    "O1": O1_SCHEMA,
     "O2": O2_SCHEMA,
     "O3": O3_SCHEMA,
 }

@@ -305,12 +305,17 @@ def build_today_features(today_merged: pd.DataFrame, cfg: dict) -> dict[int, pd.
             merged["surface_code"].astype(np.int64) * 10 + code
         ).astype(np.int8)
 
-        # lr_label はプレースホルダ（NaN）として付与する。132列アサートのため。
+        # lr_label はプレースホルダ（NaN）として付与する。列数アサートのため。
         # 推論には使わない（get_feature_cols() が id_cols として除外する）。
         merged["lr_label"] = np.nan
 
-        assert len(merged.columns) == 132, (
-            f"[track_condition_code={code}] 132列のはずですが {len(merged.columns)} 列です: "
+        # 列数は 132 → 134（front_pref_x_small, hist_turn_surface_win_edge が
+        # v48_agari_turn_surface（このブランチ）で create_features.py の共有履歴
+        # ローダーに追加されたため。L4復旧確認, 2026-07-10。列集合のドリフト検知が
+        # 目的のアサートであり、実際に使う特徴量集合は get_feature_cols() が
+        # cfg["features"]["id_cols"] / FORBIDDEN_COLS に基づき別途決定する）。
+        assert len(merged.columns) == 134, (
+            f"[track_condition_code={code}] 134列のはずですが {len(merged.columns)} 列です: "
             f"{sorted(merged.columns)}"
         )
 
@@ -380,10 +385,24 @@ def run_today_predictions(
     result: dict[int, pd.DataFrame] = {}
     for code, df in today_features.items():
         feature_cols = get_feature_cols(df, cfg)
-        if set(feature_cols) != set(model_feature_order):
+        # モデルが学習時に使った列が今回の特徴量に全て揃っているかのみを検証する
+        # （不足があれば列名ズレ・特徴量スクランブルの実害があるため fatal）。
+        # 逆に今回の特徴量集合がモデルより多い（新しい候補列がまだ本番モデルに
+        # 取り込まれていない）ことは無害 — X = df[model_feature_order] で
+        # 未使用列を明示的に落とすため。L4復旧確認, 2026-07-10: 現行 v39_course_slim
+        # 本番モデルに対し、開発中の v48 候補列（hist_turn_surface_win_edge 等）が
+        # 共有履歴ローダーに追加済みだが未学習のため、完全一致チェックだと必ず失敗する。
+        missing = set(model_feature_order) - set(feature_cols)
+        if missing:
             raise RuntimeError(
-                f"[track_condition_code={code}] 特徴量列集合がモデルの学習時と不一致: "
-                f"diff={set(feature_cols) ^ set(model_feature_order)}"
+                f"[track_condition_code={code}] モデルの学習時特徴量が不足しています: "
+                f"missing={missing}"
+            )
+        extra = set(feature_cols) - set(model_feature_order)
+        if extra:
+            print(
+                f"  [run_today_predictions] track_condition_code={code}: "
+                f"モデル未使用の特徴量候補列を無視します（安全）: {sorted(extra)}"
             )
         X = df[model_feature_order]
         preds = ensemble_predict(models, X)
